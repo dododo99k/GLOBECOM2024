@@ -19,7 +19,8 @@ from compute.aug_server import ShareCompServer  # vehicle server
 # todo:
 
 class env_main():
-    def __init__(self, num_vehicles=20, capacity_vehicle=465, bandwidth_ul=1.0, bandwidth_dl=1.0):
+    def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1.0, bandwidth_dl=1.0,
+                 poisson_density = 0.5, length = 100 , mode = 'base'):
         self.num_vehicles = num_vehicles
         print("number of simulated vehicles ", num_vehicles)
         np.random.seed(int(time.time()*1000000)%1000)
@@ -29,6 +30,7 @@ class env_main():
         self.res_bw_dl = bandwidth_dl
         self.res_cap_vehicle = capacity_vehicle
         self.time = 0 # reset the decision time
+        self.length = length
         self.Vehicles = []
 
         self.stats = {'latency':[],}
@@ -60,9 +62,7 @@ class env_main():
         #######################  ppp look up table (pdf), for fast ppp sample
         ppp_CDF = []
         cdf = 0
-        # self.ppp_lambda = self.num_vehicles//2 # maximum: 700, will overflow if larger
-        self.ppp_lambda = 0.5 # maximum: 700, will overflow if larger
-        # n = self.ppp_lambda
+        self.ppp_lambda = poisson_density # 0.5 by deault
         n = 0 
         while 1:
             prob = self.ppp_lambda**n/math.factorial(n)*math.exp(-self.ppp_lambda)
@@ -78,10 +78,7 @@ class env_main():
 
 
     def task_generator(self): # assuming allow max number of tasks within one time slot
-        
         sample_pdf = random.random()
-        # print("sample_pdf",sample_pdf)
-        # target = sample_pdf
         left, right = 0, len(self.ppp_CDF) - 1
         while left < right:
             mid = left + (right - left) // 2
@@ -113,15 +110,17 @@ class env_main():
 
         current_task_num = 0
         tasks = []
-        for vehicle in self.Vehicles:
-            in_vehicle_tasks = self.task_generator() # assign genertaed tasks number for each vehicle
-            current_task_num += in_vehicle_tasks
-            vehicle.generated_task_num = in_vehicle_tasks
+        
+        if self.time<=self.length:
+            for vehicle in self.Vehicles:
+                in_vehicle_tasks = self.task_generator() # assign genertaed tasks number for each vehicle
+                current_task_num += in_vehicle_tasks
+                vehicle.generated_task_num = in_vehicle_tasks
 
-            generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, generated_vid = vehicle.vid) for k in range(vehicle.generated_task_num)]
-            tasks += copy.deepcopy(generated_task)
-            self.TASKS += copy.deepcopy(generated_task)
-            pass
+                generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, generated_vid = vehicle.vid) for k in range(vehicle.generated_task_num)]
+                tasks += copy.deepcopy(generated_task)
+                self.TASKS += copy.deepcopy(generated_task)
+                pass
 
         # tasks = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time) for k in range(current_task_num)] # vid=vid to be added
 
@@ -207,17 +206,19 @@ class env_main():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--length', type=int, default=100)
+    parser.add_argument('--length', type=int, default=1000)
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
+    parser.add_argument('-pd','--poisson_density', type=float, default=0.5)
     parser.add_argument('--mode', type=str, default="base")
     args = parser.parse_args()
 
-    env = env_main(num_vehicles=args.car_num, mode = args.mode) 
+    env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
+                   length =args.length, mode = args.mode) 
 
     start_time = time.time()
-    for i in tqdm(range(args.length)):
+    for i in tqdm(range(10*args.length)):
         # random select vid and action
         initial_state = env.step()
     print("time usage:", time.time()-start_time)
@@ -226,6 +227,9 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     plt.hist(np.array(env.stats['latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
     fix_hist_step_vertical_line_at_end(ax)
+    plt.title('Possion Distribution density = %s' %(args.poisson_density) )
+    plt.xlabel('latency')
+    plt.ylabel("CDF")
     plt.show()
-    fig.savefig('CDF of latency.png')
+    fig.savefig('CDF of latency on PP density %s.png' %(args.poisson_density))
     print('done')
