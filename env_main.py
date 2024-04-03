@@ -20,7 +20,7 @@ from compute.aug_server import ShareCompServer  # vehicle server
 
 class env_main():
     def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1.0, bandwidth_dl=1.0,
-                 poisson_density = 0.5, length = 100 , mode = 'base'):
+                 poisson_density = 0.01, length = 100 , mode = 'base'):
         self.num_vehicles = num_vehicles
         print("number of simulated vehicles ", num_vehicles)
         np.random.seed(int(time.time()*1000000)%1000)
@@ -32,7 +32,7 @@ class env_main():
         self.time = 0 # reset the decision time
         self.length = length
         self.Vehicles = []
-
+        self.mode = mode
         self.stats = {'latency':[],}
         ###################################### generate vehicles ################################################ 
 
@@ -97,10 +97,28 @@ class env_main():
         
         
     def run_algorithm(self, tasks):
-        for task in tasks:
-            # np.random.seed(int(time.time()*1000000)%1000)
-            # task.vid = np.random.randint(self.num_vehicles)
-            task.vid = task.generated_vid
+        ############################# local computing mode ####################
+        if self.mode == 'base':
+            for task in tasks:
+                task.vid = task.generated_vid
+    
+        ############################# edge computing mode ####################
+        free_vehicle_id = list(range(self.num_vehicles))
+        for tk in tasks:
+            try:
+                free_vehicle_id.remove(tk.generated_vid)
+            except:
+                pass
+        
+        for v in self.Vehicles:
+            if v.tasks:
+                try:
+                    free_vehicle_id.remove(v.vid)
+                except:
+                    pass
+        
+        pass
+        
 
     def step(self, ):
         
@@ -139,8 +157,6 @@ class env_main():
         # remove local computing tasks
         for tk in remove_list:
             tasks.remove(tk)
-        
-        pass
     
         for tk in tasks:
             self.downlink.enqueue_task(tk)
@@ -206,11 +222,11 @@ class env_main():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--length', type=int, default=1000)
+    parser.add_argument('--length', type=int, default=60000)
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
-    parser.add_argument('-pd','--poisson_density', type=float, default=0.5)
+    parser.add_argument('-pd','--poisson_density', type=float, default=0.001)
     parser.add_argument('--mode', type=str, default="base")
     args = parser.parse_args()
 
@@ -218,7 +234,7 @@ if __name__ == '__main__':
                    length =args.length, mode = args.mode) 
 
     start_time = time.time()
-    for i in tqdm(range(10*args.length)):
+    for i in tqdm(range(2*args.length)):
         # random select vid and action
         initial_state = env.step()
     print("time usage:", time.time()-start_time)
