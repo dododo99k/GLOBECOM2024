@@ -1,0 +1,4 @@
+name: defult
+channels:
+  - defaults
+prefix: /Users/jiahe/miniforge3/envs/defult
