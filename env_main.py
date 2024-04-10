@@ -1,4 +1,4 @@
-import os, sys, math, time, random
+import os, sys, math, time, random, statistics
 from tqdm import tqdm
 import numpy as np
 import pickle
@@ -23,7 +23,10 @@ class env_main():
                  poisson_density = 0.01, length = 100 , mode = 'base'):
         self.num_vehicles = num_vehicles
         print("number of simulated vehicles ", num_vehicles)
-        np.random.seed(int(time.time()*1000000)%1000)
+        
+        np.random.seed(1000) # debug
+        random.seed(1000) # debug
+        # np.random.seed(int(time.time()*1000000)%1000)
 
         ##resources INTERFACE for changing resource in different modules, XXX ONLY take effect after reset() XXX 
         self.res_bw_ul = bandwidth_ul
@@ -34,6 +37,7 @@ class env_main():
         self.Vehicles = []
         self.mode = mode
         self.stats = {'latency':[],}
+        self.free_vehicle_num = []
         ###################################### generate vehicles ################################################ 
 
         for vid in range(self.num_vehicles):
@@ -97,27 +101,81 @@ class env_main():
         
         
     def run_algorithm(self, tasks):
+        # def local_computing(self, task):
+        #     task.vid = task.generated_vid
+        #     self.Vehicle[task.generated_vid].local_computing = True
+        #     try:
+        #         free_vehicle_id.remove(tasks.vid)
+        #     except:
+        #         pass
+               
         ############################# local computing mode ####################
         if self.mode == 'base':
             for task in tasks:
                 task.vid = task.generated_vid
+                self.Vehicles[task.generated_vid].local_computing = True
     
         ############################# edge computing mode ####################
-        free_vehicle_id = list(range(self.num_vehicles))
-        for tk in tasks:
-            try:
-                free_vehicle_id.remove(tk.generated_vid)
-            except:
+        elif self.mode == "pso":
+            free_vehicle_id = list(range(self.num_vehicles))
+            local_computing_vehicle_id = [] #list(range(self.num_vehicles))
+            allocated_tasks = []
+            
+            for v in self.Vehicles:
+                if not v.tasks: # no tasks in vehicle 
+                    free_vehicle_id.append(v.vid)
+                elif v.tasks and v.local_computing: # local computing tasks in vehicle
+                    local_computing_vehicle_id.append(v.vid)
+            
+            # record free vehicle number, incoming tasks could be allocated to the free vehicles
+            self.free_vehicle_num.append(len(free_vehicle_id))
+            
+            for tk_list_id, tk in enumerate(tasks):
+                # local computing if task generated at local vehicle as well as vehicle is free
+                if tk.generated_vid in free_vehicle_id:
+                    tk.vid = tk.generated_vid
+                    self.Vehicle[tk.generated_vid].local_computing = True
+                    try:
+                        free_vehicle_id.remove(tk.vid)
+                    except:
+                        pass
+                # when vehicle is computing tasks from other vehicles,
+                # if the vehicle is not local computing
+                # assign self-generated tasks to this vehicle
+                elif not self.Vehicle[tk.generated_vid].local_computing:
+                    tk.vid = tk.generated_vid
+                    self.Vehicle[tk.generated_vid].local_computing = True
+                    try:
+                        free_vehicle_id.remove(tk.vid)
+                    except:
+                        pass           
+                # if all vehicles are in computing, assign each task to local computing
+                elif not free_vehicle_id:
+                    tk.vid = tk.generated_vid
+                    self.Vehicle[tk.generated_vid].local_computing = True
+                    try:
+                        free_vehicle_id.remove(tk.vid)
+                    except:
+                        pass                
+                else:
+                    allocated_tasks.append(tk_list_id)
+                    
+            ''' 
+            Two Modes
+            
+            1. 
+            Free vehicle V_i loads tasks from other vehicle. 
+            During the computation period, another tasks generated from the vehicle V_i.
+            The new task is allocated to other free vehicle.
+            
+            2.
+            Free vehicle V_i loads tasks from other vehicle. 
+            During the computation period, another tasks generated from the vehicle V_i.
+            The new task is place locally and V_i is locked from edge computing until finishing local computing.
+            '''
+            allocated_tasks_num = len(allocated_tasks)
+            for tk_list_id in allocated_tasks:
                 pass
-        
-        for v in self.Vehicles:
-            if v.tasks:
-                try:
-                    free_vehicle_id.remove(v.vid)
-                except:
-                    pass
-        
-        pass
         
 
     def step(self, ):
@@ -222,16 +280,16 @@ class env_main():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--length', type=int, default=60000)
+    parser.add_argument('--length', type=int, default=60000) # ms
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
-    parser.add_argument('-pd','--poisson_density', type=float, default=0.001)
+    parser.add_argument('-pd','--poisson_density', type=float, default=0.015)
     parser.add_argument('--mode', type=str, default="base")
     args = parser.parse_args()
 
     env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
-                   length =args.length, mode = args.mode) 
+                   length = args.length, mode = args.mode)
 
     start_time = time.time()
     for i in tqdm(range(2*args.length)):
@@ -240,12 +298,31 @@ if __name__ == '__main__':
     print("time usage:", time.time()-start_time)
 
     # plot the CDF of the achieved all user latency
-    fig, ax = plt.subplots()
-    plt.hist(np.array(env.stats['latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
-    fix_hist_step_vertical_line_at_end(ax)
-    plt.title('Possion Distribution density = %s' %(args.poisson_density) )
-    plt.xlabel('latency')
-    plt.ylabel("CDF")
+    
+    # fig, ax = plt.subplots()
+    # plt.hist(np.array(env.stats['latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
+    # fix_hist_step_vertical_line_at_end(ax)
+    # plt.title('Possion Distribution density = %s' %(args.poisson_density))
+    # plt.xlabel('latency')
+    # plt.ylabel("CDF")
+    # plt.show()
+    # fig.savefig('CDF of latency on PP density %s.png' %(args.poisson_density))
+    plt_size = 8
+    fig, ax = plt.subplots(1, 2, figsize=(2*plt_size,plt_size))
+    plt.suptitle('Possion Distribution density = %s' %(args.poisson_density))
+    ax1 = ax[0]
+    ax1.hist(np.array(env.stats['latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
+    fix_hist_step_vertical_line_at_end(ax1)
+    ax1.set_title('CDF of time latency')
+    ax1.set_xlabel('latency')
+    ax1.set_ylabel("CDF")
+
+    ax2 = ax[1]
+    ax2.plot(env.free_vehicle_num[:args.length])
+    ax2.set_title('free vehicle number, average = %s' %(statistics.mean(env.free_vehicle_num[:args.length])))
+    ax2.set_xlabel('time')
+    ax2.set_ylabel("number")
     plt.show()
-    fig.savefig('CDF of latency on PP density %s.png' %(args.poisson_density))
+    fig.savefig('experiment log with density %s and time length %s.png' %(args.poisson_density, args.length))
+    # save_subfig(fig, ax1, 'test CDF of latency on PP density %s.png' %(args.poisson_density))
     print('done')

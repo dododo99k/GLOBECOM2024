@@ -18,6 +18,7 @@ class ShareCompServer:
         self.location = np.random.randint(30, 500, 2) # random generate the vehicle location
         self.generated_task_num = 0
         self.generated_task = []
+        self.local_computing = False
         
         #######################  ppp look up table (pdf), for fast ppp sample
         # ppp_CDF = []
@@ -71,13 +72,15 @@ class ShareCompServer:
 
     
     def step(self,):
-
+        
+        self.local_computing = False
         self.time += 1 # increase simulation time
 
         self.do_resource_allocation()
         # dequeue tasks if they completed (front task in queue)
         
         tasks_dequeued = []
+        tasks_remove_list = []
 
         # dequeue the task if the task is completed, based on remaining compute size
         for task in self.tasks: # increase compute time and total time for all tasks
@@ -88,10 +91,24 @@ class ShareCompServer:
             task.time_vehicle_compute += 1 # add time unit every time for server processing
             task.remain_compute_size = np.clip(task.remain_compute_size - average_rate, 0, None)
             # remove the task
+            # if task.remain_compute_size <= 0:
+            #     tasks_dequeued.append(copy.deepcopy(task)) # append the task for task completion
+            #     self.tasks.remove(task) # remove it 
+            # remove the task by Jiahe Cao
             if task.remain_compute_size <= 0:
                 tasks_dequeued.append(copy.deepcopy(task)) # append the task for task completion
-                self.tasks.remove(task) # remove it 
-
+                tasks_remove_list.append(task) # remove it
+        # remove the task by Jiahe Cao
+        for remove_tk in tasks_remove_list:
+            self.tasks.remove(remove_tk)
+            
+            
+        for task in self.tasks:
+            if task.generated_vid == self.vid:
+                self.local_computing = True
+                break
+            # elif self.local_computing: # taks.generated_vid != self.vid AND slef.local_somputing = True
+                
         return tasks_dequeued
 
     def get_num_of_users(self,):

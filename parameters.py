@@ -9,6 +9,11 @@ MINI_ALLOC_RADIO = 0.05
 MINI_ALLOC_COMP = 0.1
 
 
+def save_subfig(fig,ax,fig_name,save_path = './'):
+    scale = 2
+    bbox = ax.get_tightbbox(fig.canvas.get_renderer()).expanded(scale, scale)
+    extent = bbox.transformed(fig.dpi_scale_trans.inverted())
+    fig.savefig(save_path+fig_name, bbox_inches=extent)
 
 def fix_hist_step_vertical_line_at_end(ax):
     import matplotlib
