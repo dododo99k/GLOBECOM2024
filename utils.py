@@ -20,7 +20,7 @@ class Task:
         self.time_dl_transmit = 0 #  the time consumed in ul
         
         # remain_compute_size_list = [200, 500, 700]  
-        remain_compute_size_list = list(range(200, 700, 10))
+        remain_compute_size_list = list(range(200, 800, 10))
         self.remain_compute_size = random.sample(remain_compute_size_list, 1)[0]# TODO  XXX
         # used by wireless
         task_size_list = [200, 500, 1000]

@@ -198,6 +198,7 @@ class Uplink:
         for result in results:
             vid = result['id']
             outgoing_size = result["capacity_mbps"] * 1000 # calculate outgoing size # this is Mbits, and time unit is millisecond, the data size is kbits
+            self.receivers[str(vid)].capacity = outgoing_size
             self.update_receiver_task_buffer(vid, outgoing_size)
             # only output the receiver that has buffer size at the begining of current time
             
@@ -826,6 +827,7 @@ class Receiver(object):
 
         self.active = data['information']['active']
         self.tasks = data['tasks']
+        self.capacity = 1 # default bandwidth
 
 class SiteArea(object):
     """

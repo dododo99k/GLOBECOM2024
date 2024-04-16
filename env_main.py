@@ -14,15 +14,18 @@ from uplink.uplink import Uplink
 from downlink.downlink import Downlink
 from compute.aug_server import ShareCompServer  # vehicle server
 
+from pso import PSO
+
 # todo: vehicle location geenration once only
 # todo: traffic generator, ppp maybe or trace
 # todo:
 
 class env_main():
     def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1.0, bandwidth_dl=1.0,
-                 poisson_density = 0.01, length = 100 , mode = 'base'):
-        self.num_vehicles = num_vehicles
+                 poisson_density = 0.015, ego_poisson_density = 0.02, length = 100 , mode = 'base'):
+        self.num_vehicles = num_vehicles + 1 # first vheicle is ego vehicleç
         print("number of simulated vehicles ", num_vehicles)
+        print("poisson density ", poisson_density)
         
         np.random.seed(1000) # debug
         random.seed(1000) # debug
@@ -36,13 +39,16 @@ class env_main():
         self.length = length
         self.Vehicles = []
         self.mode = mode
-        self.stats = {'latency':[],}
+        self.stats = {'latency':[], 'ego_v_latency':[]}
         self.free_vehicle_num = []
+        self.vehicle_tasks_num = []
+        # self.ego_vid = 100
         ###################################### generate vehicles ################################################ 
-
+        
+        # ego vehicle vid = 0
         for vid in range(self.num_vehicles):
             self.Vehicles.append(ShareCompServer(vid, capacity=self.res_cap_vehicle)) # initialize the vehicle entity
-
+        
         ###################################### generate wireless ################################################
 
         self.downlink = Downlink(bandwidth=self.res_bw_dl)
@@ -62,11 +68,12 @@ class env_main():
         ######################################  ################################################
        
         self.TASKS = []
+        self.egoTASKS = []
 
         #######################  ppp look up table (pdf), for fast ppp sample
         ppp_CDF = []
         cdf = 0
-        self.ppp_lambda = poisson_density # 0.5 by deault
+        self.ppp_lambda = poisson_density # 0.015 by deault
         n = 0 
         while 1:
             prob = self.ppp_lambda**n/math.factorial(n)*math.exp(-self.ppp_lambda)
@@ -78,23 +85,38 @@ class env_main():
             n+=1
         self.max_tasks = n
         self.ppp_CDF = ppp_CDF
+
+        #######################  ego vehicle ppp look up table (pdf), for fast ppp sample
+        ego_ppp_CDF = []
+        cdf = 0
+        self.ego_ppp_lambda = ego_poisson_density # 0.02 by deault
+        n = 0 
+        while 1:
+            prob = self.ego_ppp_lambda**n/math.factorial(n)*math.exp(-self.ego_ppp_lambda)
+            cdf += prob
+            ego_ppp_CDF.append(cdf)
+            # print(n, pdf)
+            if cdf >= 1 or ( n > self.ego_ppp_lambda and prob <= 1e-16): # float number precision
+                break
+            n+=1
+        self.ego_ppp_CDF = ego_ppp_CDF
         # print("self.ppp_pdf",self.ppp_pdf)
 
 
-    def task_generator(self): # assuming allow max number of tasks within one time slot
+    def task_generator(self, ppp_CDF): # assuming allow max number of tasks within one time slot
         sample_pdf = random.random()
-        left, right = 0, len(self.ppp_CDF) - 1
+        left, right = 0, len(ppp_CDF) - 1
         while left < right:
             mid = left + (right - left) // 2
-            if self.ppp_CDF[mid] < sample_pdf:
+            if ppp_CDF[mid] < sample_pdf:
                 left = mid + 1
-            elif self.ppp_CDF[mid] > sample_pdf:
+            elif ppp_CDF[mid] > sample_pdf:
                 right = mid - 1
         mid = left + (right - left) // 2
 
-        if self.ppp_CDF[mid] < sample_pdf and sample_pdf <= self.ppp_CDF[mid+1]:
+        if ppp_CDF[mid] < sample_pdf and sample_pdf <= ppp_CDF[mid+1]:
             mid+=1
-        elif self.ppp_CDF[mid+1] < sample_pdf:
+        elif ppp_CDF[mid+1] < sample_pdf:
             mid+=2
         
         return mid
@@ -108,74 +130,116 @@ class env_main():
         #         free_vehicle_id.remove(tasks.vid)
         #     except:
         #         pass
-               
+        
         ############################# local computing mode ####################
         if self.mode == 'base':
+            free_vehicle_id = list(range(self.num_vehicles))
+            
             for task in tasks:
                 task.vid = task.generated_vid
                 self.Vehicles[task.generated_vid].local_computing = True
-    
+                try:
+                    free_vehicle_id.remove(task.vid)
+                except:
+                    pass
+            
+            for v in self.Vehicles:
+                if v.tasks: # no tasks in vehicle
+                    try:
+                        free_vehicle_id.remove(v.vid)
+                    except:
+                        pass
+            
+            # record free vehicle number, incoming tasks could be allocated to the free vehicles
+            self.free_vehicle_num.append(len(free_vehicle_id))
+            
         ############################# edge computing mode ####################
         elif self.mode == "pso":
             free_vehicle_id = list(range(self.num_vehicles))
             local_computing_vehicle_id = [] #list(range(self.num_vehicles))
             allocated_tasks = []
             
-            for v in self.Vehicles:
-                if not v.tasks: # no tasks in vehicle 
-                    free_vehicle_id.append(v.vid)
-                elif v.tasks and v.local_computing: # local computing tasks in vehicle
-                    local_computing_vehicle_id.append(v.vid)
+            for v in self.Vehicles[1:]:
+                if v.tasks: # no tasks in vehicle
+                    try:
+                        free_vehicle_id.remove(v.vid)
+                    except:
+                        pass
+                    if v.local_computing: # local computing tasks in vehicle
+                        local_computing_vehicle_id.append(v.vid)
             
             # record free vehicle number, incoming tasks could be allocated to the free vehicles
             self.free_vehicle_num.append(len(free_vehicle_id))
             
-            for tk_list_id, tk in enumerate(tasks):
-                # local computing if task generated at local vehicle as well as vehicle is free
-                if tk.generated_vid in free_vehicle_id:
-                    tk.vid = tk.generated_vid
-                    self.Vehicle[tk.generated_vid].local_computing = True
+
+            
+            # size : (3, number of edge vehicles, 3), downlink speed, uplink speed, remaining tasks computing time
+            # fitness_list = [[0] * 3] * (self.num_vehicles - 1)
+            fitness_list = np.zeros(((self.num_vehicles - 1),3))
+            # record wireless transmitting speed
+            for receiver_id, receiver in enumerate(self.downlink.receivers): # receiver 1-21
+                if receiver_id>0:
+                    fitness_list[receiver_id-1][0] = self.downlink.receivers[receiver].capacity
+                    
+            for receiver_id, receiver in enumerate(self.uplink.receivers): # receiver 1-21
+                if receiver_id>0:
+                    fitness_list[receiver_id-1][1] = self.uplink.receivers[receiver].capacity
+
+            # edge server local computing
+            for task in tasks:
+                if task.generated_vid==0:
+                    allocated_tasks.append(task)
+                elif task.generated_vid > 0:
+                    task.vid = task.generated_vid
+                    self.Vehicles[task.generated_vid].local_computing = True
+                    fitness_list[task.generated_vid-1][2] += \
+                        task.remain_compute_size/self.Vehicles[task.generated_vid].capacity
                     try:
-                        free_vehicle_id.remove(tk.vid)
+                        free_vehicle_id.remove(task.vid)
                     except:
                         pass
-                # when vehicle is computing tasks from other vehicles,
-                # if the vehicle is not local computing
-                # assign self-generated tasks to this vehicle
-                elif not self.Vehicle[tk.generated_vid].local_computing:
-                    tk.vid = tk.generated_vid
-                    self.Vehicle[tk.generated_vid].local_computing = True
-                    try:
-                        free_vehicle_id.remove(tk.vid)
-                    except:
-                        pass           
-                # if all vehicles are in computing, assign each task to local computing
-                elif not free_vehicle_id:
-                    tk.vid = tk.generated_vid
-                    self.Vehicle[tk.generated_vid].local_computing = True
-                    try:
-                        free_vehicle_id.remove(tk.vid)
-                    except:
-                        pass                
-                else:
-                    allocated_tasks.append(tk_list_id)
-                    
+            
+            if not allocated_tasks: # if there is no ego vehicle tasks, no need to do PSO
+                return None
+
+            
+            # record edge server remaining computing time
+            for vehicle in self.Vehicles[1:]:
+                task_sum = 0
+                for task in vehicle.tasks:
+                    task_sum += task.remain_compute_size
+                pass
+                fitness_list[vehicle.vid-1][2] += task_sum/vehicle.capacity
+                
+
+            result = PSO(allocated_tasks, fitness_list)
+            
+            for i, task in enumerate(allocated_tasks):
+                task.vid = result[i]
+            
+                
+            if not self.Vehicles[0].tasks:
+                allocated_tasks[0].vid = allocated_tasks[0].generated_vid
+                
+            for tk in tasks:
+                if tk.generated_vid==0:
+                    for allocated_tk in allocated_tasks:
+                        if allocated_tk.tid == tk.tid:
+                            tk.vid = allocated_tk.vid
             ''' 
             Two Modes
             
             1. 
-            Free vehicle V_i loads tasks from other vehicle. 
+            Free vehicle V_i loads tasks from other vehicle.
             During the computation period, another tasks generated from the vehicle V_i.
             The new task is allocated to other free vehicle.
             
             2.
-            Free vehicle V_i loads tasks from other vehicle. 
+            Free vehicle V_i loads tasks from other vehicle.
             During the computation period, another tasks generated from the vehicle V_i.
             The new task is place locally and V_i is locked from edge computing until finishing local computing.
             '''
-            allocated_tasks_num = len(allocated_tasks)
-            for tk_list_id in allocated_tasks:
-                pass
+
         
 
     def step(self, ):
@@ -189,16 +253,27 @@ class env_main():
         
         if self.time<=self.length:
             for vehicle in self.Vehicles:
-                in_vehicle_tasks = self.task_generator() # assign genertaed tasks number for each vehicle
-                current_task_num += in_vehicle_tasks
-                vehicle.generated_task_num = in_vehicle_tasks
-
-                generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, generated_vid = vehicle.vid) for k in range(vehicle.generated_task_num)]
+                if vehicle.vid == 0: # ego vehicle
+                    # assign genertaed tasks number for each vehicle
+                    ego_vehicle_task_num = self.task_generator(self.ego_ppp_CDF) 
+                    vehicle.generated_task_num = ego_vehicle_task_num
+                    # create tasks
+                    generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, 
+                                           generated_vid = vehicle.vid) for k in range(ego_vehicle_task_num)]
+                    
+                else: # other vehicles
+                    in_vehicle_tasks = self.task_generator(self.ppp_CDF)
+                    current_task_num += in_vehicle_tasks # record other vhicle tasks num
+                    vehicle.generated_task_num = in_vehicle_tasks
+                    generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, 
+                                           generated_vid = vehicle.vid) for k in range(vehicle.generated_task_num)]
+                
+                # copy tasks 
                 tasks += copy.deepcopy(generated_task)
                 self.TASKS += copy.deepcopy(generated_task)
-                pass
 
-        # tasks = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time) for k in range(current_task_num)] # vid=vid to be added
+        # tasks = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time) for k in range(current_task_num)]
+        # # vid=vid to be added
 
         ################################# algrotihm execution #################################
 
@@ -220,7 +295,7 @@ class env_main():
             self.downlink.enqueue_task(tk)
 
         ############################### run whole end-to-end process #######################################
-            
+
         ############ run downlink wireless ######################
 
         complete_downlink = self.downlink.step()
@@ -234,9 +309,10 @@ class env_main():
             self.Vehicles[tk.vid].enqueue_task(tk)
         
         ############ run vehicle #######################
-
+        vehicle_tasks_num = 0
         for vehicle in self.Vehicles:
             # run computation on vehicle
+            vehicle_tasks_num += len(vehicle.tasks)
             complete_compute = vehicle.step()
             
             for tk in complete_compute:
@@ -246,8 +322,11 @@ class env_main():
                     tk.end_time = self.time # assign the end time of this task
                     # print(task.total_time)
                     self.stats['latency'].append(tk.total_time)
+                    if tk.generated_vid == 0:
+                        self.stats['ego_v_latency'].append(tk.total_time)
                     tk.post_process() # calculate avg data rate and compute rate
-                    
+        
+        self.vehicle_tasks_num.append(vehicle_tasks_num/len(self.Vehicles))
 
 
         ############ run uplink wireless ######################
@@ -260,6 +339,8 @@ class env_main():
             task.end_time = self.time # assign the end time of this task
             # print(task.total_time)
             self.stats['latency'].append(task.total_time)
+            if task.generated_vid == 0:
+                self.stats['ego_v_latency'].append(task.total_time)
             task.post_process() # calculate avg data rate and compute rate
 
         ##################################################################
@@ -285,14 +366,17 @@ if __name__ == '__main__':
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
     parser.add_argument('-pd','--poisson_density', type=float, default=0.015)
-    parser.add_argument('--mode', type=str, default="base")
+    parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.03)
+    parser.add_argument('--mode', type=str, default="pso")
+    parser.add_argument('--no_figure', action="store_false") #
     args = parser.parse_args()
 
     env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
+                   ego_poisson_density = args.ego_poisson_density,
                    length = args.length, mode = args.mode)
 
     start_time = time.time()
-    for i in tqdm(range(2*args.length)):
+    for i in tqdm(range(int(1.25*args.length))):
         # random select vid and action
         initial_state = env.step()
     print("time usage:", time.time()-start_time)
@@ -308,21 +392,37 @@ if __name__ == '__main__':
     # plt.show()
     # fig.savefig('CDF of latency on PP density %s.png' %(args.poisson_density))
     plt_size = 8
-    fig, ax = plt.subplots(1, 2, figsize=(2*plt_size,plt_size))
+    fig, ax = plt.subplots(2, 2, figsize=(2*plt_size,plt_size))
     plt.suptitle('Possion Distribution density = %s' %(args.poisson_density))
-    ax1 = ax[0]
+    ax1 = ax[0,0]
     ax1.hist(np.array(env.stats['latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
     fix_hist_step_vertical_line_at_end(ax1)
     ax1.set_title('CDF of time latency')
     ax1.set_xlabel('latency')
     ax1.set_ylabel("CDF")
 
-    ax2 = ax[1]
-    ax2.plot(env.free_vehicle_num[:args.length])
+    ax2 = ax[0,1]
+    ax2.plot(env.free_vehicle_num)
     ax2.set_title('free vehicle number, average = %s' %(statistics.mean(env.free_vehicle_num[:args.length])))
     ax2.set_xlabel('time')
     ax2.set_ylabel("number")
-    plt.show()
-    fig.savefig('experiment log with density %s and time length %s.png' %(args.poisson_density, args.length))
+    
+    ax3 = ax[1,0]
+    ax3.plot(env.vehicle_tasks_num)
+    ax3.set_title('average task number, average = %s' %(statistics.mean(env.vehicle_tasks_num[:args.length])))
+    ax3.set_xlabel('time')
+    ax3.set_ylabel("tasks number")
+    
+    ax4 = ax[1,1]
+    ax4.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
+    fix_hist_step_vertical_line_at_end(ax4)
+    ax4.set_title('CDF of ego v time latency')
+    ax4.set_xlabel('latency')
+    ax4.set_ylabel("CDF")
+
+    if args.no_figure:
+       plt.show()
+    
+    fig.savefig('experiment log with density %s and time length %s, mode %s.png' %(args.poisson_density, args.length, args.mode))
     # save_subfig(fig, ax1, 'test CDF of latency on PP density %s.png' %(args.poisson_density))
     print('done')
