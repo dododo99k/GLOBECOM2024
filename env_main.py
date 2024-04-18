@@ -48,6 +48,7 @@ class env_main():
         # ego vehicle vid = 0
         for vid in range(self.num_vehicles):
             self.Vehicles.append(ShareCompServer(vid, capacity=self.res_cap_vehicle)) # initialize the vehicle entity
+        self.Vehicles[0].location = np.array((0,0))
         
         ###################################### generate wireless ################################################
 
@@ -171,11 +172,17 @@ class env_main():
             # record free vehicle number, incoming tasks could be allocated to the free vehicles
             self.free_vehicle_num.append(len(free_vehicle_id))
             
-
             
-            # size : (3, number of edge vehicles, 3), downlink speed, uplink speed, remaining tasks computing time
+            # size : (number of edge vehicles, 3), downlink speed, uplink speed, remaining tasks computing time
             # fitness_list = [[0] * 3] * (self.num_vehicles - 1)
-            fitness_list = np.zeros(((self.num_vehicles - 1),3))
+            # fitness_list[:][0] : wireless transmitting speed
+            # fitness_list[:][1] : wireless transmitting speed
+            # fitness_list[:][2] : vehicle computing resource/capacity
+            # fitness_list[:][3] : remaining tasks number
+            # fitness_list[:][4] : vehicle computing resource/capacity
+            
+            fitness_list = np.zeros(((self.num_vehicles - 1),5))
+            
             # record wireless transmitting speed
             for receiver_id, receiver in enumerate(self.downlink.receivers): # receiver 1-21
                 if receiver_id>0:
@@ -192,8 +199,8 @@ class env_main():
                 elif task.generated_vid > 0:
                     task.vid = task.generated_vid
                     self.Vehicles[task.generated_vid].local_computing = True
-                    fitness_list[task.generated_vid-1][2] += \
-                        task.remain_compute_size/self.Vehicles[task.generated_vid].capacity
+                    # fitness_list[task.generated_vid-1][2] += \
+                    #     task.remain_compute_size/self.Vehicles[task.generated_vid].capacity
                     try:
                         free_vehicle_id.remove(task.vid)
                     except:
@@ -208,11 +215,13 @@ class env_main():
                 task_sum = 0
                 for task in vehicle.tasks:
                     task_sum += task.remain_compute_size
-                pass
-                fitness_list[vehicle.vid-1][2] += task_sum/vehicle.capacity
+                
+                fitness_list[vehicle.vid-1][2] = vehicle.capacity
+                fitness_list[vehicle.vid-1][3] = len(vehicle.tasks)
+                fitness_list[vehicle.vid-1][4] = self.Vehicles[task.generated_vid].capacity
                 
 
-            result = PSO(allocated_tasks, fitness_list)
+            result = PSO( self.Vehicles[1:], allocated_tasks, fitness_list )
             
             for i, task in enumerate(allocated_tasks):
                 task.vid = result[i]
@@ -226,19 +235,11 @@ class env_main():
                     for allocated_tk in allocated_tasks:
                         if allocated_tk.tid == tk.tid:
                             tk.vid = allocated_tk.vid
-            ''' 
-            Two Modes
-            
-            1. 
-            Free vehicle V_i loads tasks from other vehicle.
-            During the computation period, another tasks generated from the vehicle V_i.
-            The new task is allocated to other free vehicle.
-            
-            2.
-            Free vehicle V_i loads tasks from other vehicle.
-            During the computation period, another tasks generated from the vehicle V_i.
-            The new task is place locally and V_i is locked from edge computing until finishing local computing.
-            '''
+                            
+        # TODO
+        # random allocate ego vehicle tasks to free edge server vehicles
+        elif self.mode == "random":
+            pass
 
         
 
@@ -255,7 +256,9 @@ class env_main():
             for vehicle in self.Vehicles:
                 if vehicle.vid == 0: # ego vehicle
                     # assign genertaed tasks number for each vehicle
-                    ego_vehicle_task_num = self.task_generator(self.ego_ppp_CDF) 
+                    ego_vehicle_task_num = self.task_generator(self.ego_ppp_CDF)
+                    if ego_vehicle_task_num>=2:
+                        print("time {}, ego vehicle task number:{}".format(self.time, ego_vehicle_task_num,))
                     vehicle.generated_task_num = ego_vehicle_task_num
                     # create tasks
                     generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, 
@@ -328,7 +331,6 @@ class env_main():
         
         self.vehicle_tasks_num.append(vehicle_tasks_num/len(self.Vehicles))
 
-
         ############ run uplink wireless ######################
 
         complete_uplink = self.uplink.step()
@@ -365,10 +367,10 @@ if __name__ == '__main__':
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
-    parser.add_argument('-pd','--poisson_density', type=float, default=0.015)
+    parser.add_argument('-pd','--poisson_density', type=float, default=0.000)
     parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.03)
     parser.add_argument('--mode', type=str, default="pso")
-    parser.add_argument('--no_figure', action="store_false") #
+    parser.add_argument('--show_figure', action="store_true") #
     args = parser.parse_args()
 
     env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
@@ -402,25 +404,32 @@ if __name__ == '__main__':
     ax1.set_ylabel("CDF")
 
     ax2 = ax[0,1]
-    ax2.plot(env.free_vehicle_num)
-    ax2.set_title('free vehicle number, average = %s' %(statistics.mean(env.free_vehicle_num[:args.length])))
-    ax2.set_xlabel('time')
-    ax2.set_ylabel("number")
+    ax2.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
+    fix_hist_step_vertical_line_at_end(ax2)
+    ax2.set_title('CDF of ego v time latency')
+    ax2.set_xlabel('latency')
+    ax2.set_ylabel("CDF")
     
     ax3 = ax[1,0]
-    ax3.plot(env.vehicle_tasks_num)
-    ax3.set_title('average task number, average = %s' %(statistics.mean(env.vehicle_tasks_num[:args.length])))
+    ax3.plot(env.free_vehicle_num)
+    ax3.set_title('free vehicle number, average = %s' %(statistics.mean(env.free_vehicle_num[:args.length])))
     ax3.set_xlabel('time')
-    ax3.set_ylabel("tasks number")
+    ax3.set_ylabel("number")
     
     ax4 = ax[1,1]
-    ax4.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
-    fix_hist_step_vertical_line_at_end(ax4)
-    ax4.set_title('CDF of ego v time latency')
-    ax4.set_xlabel('latency')
-    ax4.set_ylabel("CDF")
+    ax4.plot(env.vehicle_tasks_num)
+    ax4.set_title('average task number, average = %s' %(statistics.mean(env.vehicle_tasks_num[:args.length])))
+    ax4.set_xlabel('time')
+    ax4.set_ylabel("tasks number")
+    
+    # ax4 = ax[1,1]
+    # ax4.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
+    # fix_hist_step_vertical_line_at_end(ax4)
+    # ax4.set_title('CDF of ego v time latency')
+    # ax4.set_xlabel('latency')
+    # ax4.set_ylabel("CDF")
 
-    if args.no_figure:
+    if args.show_figure:
        plt.show()
     
     fig.savefig('experiment log with density %s and time length %s, mode %s.png' %(args.poisson_density, args.length, args.mode))

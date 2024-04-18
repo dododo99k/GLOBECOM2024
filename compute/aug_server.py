@@ -8,7 +8,7 @@ from parameters import *
 
 
 class ShareCompServer:
-    def __init__(self, vid, capacity=6.45):
+    def __init__(self, vid, capacity=6.45, lambda_prob = 0.0001):
         self.capacity = capacity * np.clip(1+np.random.randn(), 1-RANDOMS, 1+RANDOMS) # ms-level capacity
         self.tasks = [] # not actually queue, but just accommodate users
         self.time = 0
@@ -19,6 +19,7 @@ class ShareCompServer:
         self.generated_task_num = 0
         self.generated_task = []
         self.local_computing = False
+        self.lambda_prob = lambda_prob
         
         #######################  ppp look up table (pdf), for fast ppp sample
         # ppp_CDF = []
@@ -118,7 +119,11 @@ class ShareCompServer:
         self.tasks += [task]
 
         return True
-
+    
+    def prob(self, time_length = 1000): 
+        return math.exp(- time_length* self.lambda_prob)
+        
+    
 
 
 
