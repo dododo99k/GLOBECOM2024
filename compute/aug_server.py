@@ -15,7 +15,7 @@ class ShareCompServer:
         self.vid = vid
         self.allocations = {} # key is time slots, each dict is vid-to-resource
         self.minimum = 0.1 # self.capacity/num_of_users  # the minimum capacity if no reserved resource
-        self.location = np.random.randint(30, 500, 2) # random generate the vehicle location
+        self.location = np.random.randint(30, 100, 2) # random generate the vehicle location
         self.generated_task_num = 0
         self.generated_task = []
         self.local_computing = False

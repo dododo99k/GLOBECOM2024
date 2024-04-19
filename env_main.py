@@ -431,6 +431,9 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(2, 2, figsize=(2*plt_size,plt_size))
     plt.suptitle('Possion Distribution density = %s' %(args.ego_poisson_density))
     
+    # TODO
+    # draw downlink, uplink
+    
     ax1 = ax[0,0]
     ax1.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
     fix_hist_step_vertical_line_at_end(ax1)

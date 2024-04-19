@@ -686,10 +686,10 @@ class Uplink:
 
                 lowest_value = modulation_and_coding_lut[0]
 
-                if sinr < lowest_value[5]:
+                # if sinr < lowest_value[5]:
 
-                    spectral_efficiency = 0
-                    return spectral_efficiency
+                #     spectral_efficiency = 0
+                return spectral_efficiency
 
 
     def estimate_average_capacity(self, bandwidth, spectral_efficiency):
