@@ -93,7 +93,7 @@ ENVIRONMENTS = ['urban', 'suburban', 'rural']
 
 class Uplink:
     def __init__(self, environment='urban', ant_type='micro', 
-                 site_coord=[0,0], site_radius=500, 
+                 site_coord=[0,0], site_radius=100, 
                  frequency=3.5, bandwidth=1, generation='5G', 
                  simulation_parameters=PARAMETERS, modulation_coding=MODULATION_AND_CODING_LUT):
         # parameters for simulation
@@ -130,7 +130,22 @@ class Uplink:
             site_id = interfering_transmitter['properties']["site_id"]
             site_object = InterferingTransmitter(interfering_transmitter, ant_type, simulation_parameters)
             self.interfering_transmitters[site_id] = site_object
+        
+    def initialize_receiver(self, ):
+        # initialize receiver capacity, Jiahe Cao
+        # run the simulation and get the data rate
+        results = self.estimate_link_budget(
+            self.frequency, self.bandwidth, self.generation, self.ant_type,
+            self.environment, self.modulation_coding, self.parameters
+            )
 
+        for result in results:
+            vid = result['id']
+            outgoing_size = result["capacity_mbps"] # * 1000 # calculate outgoing size # this is Mbits, and time unit is millisecond, the data size is kbits
+            if outgoing_size:
+                self.receivers[str(vid)].capacity = outgoing_size # record current speed, Jiahe Cao
+            self.update_receiver_task_buffer(vid, outgoing_size)
+        
     ########################## update information of wireless ############################################
     def add_in_receiver(self, vid, coords):
         receiver = create_single_receiver_coord(PARAMETERS, vid, coords, self.site_coord)
@@ -197,8 +212,10 @@ class Uplink:
 
         for result in results:
             vid = result['id']
-            outgoing_size = result["capacity_mbps"] * 1000 # calculate outgoing size # this is Mbits, and time unit is millisecond, the data size is kbits
-            self.receivers[str(vid)].capacity = outgoing_size
+            outgoing_size = result["capacity_mbps"] # * 1000 # calculate outgoing size # this is Mbits, and time unit is millisecond, the data size is kbits
+            if outgoing_size:
+                self.receivers[str(vid)].capacity = outgoing_size
+            self.receivers[str(vid)].task_num = len(self.receivers[str(vid)].tasks)
             self.update_receiver_task_buffer(vid, outgoing_size)
             # only output the receiver that has buffer size at the begining of current time
             
@@ -827,7 +844,8 @@ class Receiver(object):
 
         self.active = data['information']['active']
         self.tasks = data['tasks']
-        self.capacity = 1 # default bandwidth
+        self.capacity = 0.000000001 # default bandwidth
+        self.task_num = 0
 
 class SiteArea(object):
     """

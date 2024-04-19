@@ -23,11 +23,11 @@ class Task:
         remain_compute_size_list = list(range(200, 800, 10))
         self.remain_compute_size = random.sample(remain_compute_size_list, 1)[0]# TODO  XXX
         # used by wireless
-        task_size_list = [200, 500, 1000]
+        task_size_list = list(range(20, 80, 1)) # kb
         self.task_size = random.sample(task_size_list, 1)[0]# TODO  XXX
         self.remain_size_dl = self.task_size
         # used by broadcast
-        result_size_list = [200, 500, 1000]
+        result_size_list = list(range(20, 80, 1)) # kb
         self.result_size = random.sample(result_size_list, 1)[0]# TODO  XXX
         self.remain_size_ul = self.result_size
 
