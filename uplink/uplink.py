@@ -276,7 +276,9 @@ class Uplink:
 
             interference, i_model, ave_distance, ave_inf_pl = self.estimate_interference(
                 receiver, frequency, environment, simulation_parameters)
-
+            
+            interference = list(np.array(interference) -50)
+            
             noise = self.estimate_noise(
                 bandwidth
             )

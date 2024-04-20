@@ -21,7 +21,8 @@ class Task:
         
         # remain_compute_size_list = [200, 500, 700]  
         remain_compute_size_list = list(range(200, 800, 10))
-        self.remain_compute_size = random.sample(remain_compute_size_list, 1)[0]# TODO  XXX
+        self.compute_size = random.sample(remain_compute_size_list, 1)[0]# TODO  XXX
+        self.remain_compute_size = self.compute_size
         # used by wireless
         task_size_list = list(range(20, 80, 1)) # kb
         self.task_size = random.sample(task_size_list, 1)[0]# TODO  XXX
@@ -41,11 +42,13 @@ class Task:
         # self.expected_uplink_latency = model_uplink_latency(self.task_size, radio)
         # self.expected_compute_latency = model_compute_latency(self.remain_server_compute_size, compute)
         # self.expected_e2e_latency = model_latency(self.remain_local_compute_size, self.task_size, self.remain_server_compute_size, radio, compute)
-
+        self.sum_computed_size = 0
         self.experienced_resource_allocation = 0
 
     def post_process(self,):
-        pass
-        # self.avg_experenced_data_rate = self.task_size_copy / (self.time_ul_transmit)
-        # self.avg_experenced_compute_rate = self.remain_server_compute_size_copy / (self.time_server_compute * TIME_SCALE)
+        self.avg_experenced_data_rate = self.task_size / (self.time_ul_transmit)
+        self.avg_experenced_compute_rate = self.compute_size / self.time_vehicle_compute
+        self.dl_time_percentage = self.time_ul_transmit/self.total_time
+        self.ul_time_percentage = self.time_ul_transmit/self.total_time
+        self.compute_time_percentage = self.time_vehicle_compute/self.total_time
         

@@ -8,18 +8,19 @@ from parameters import *
 
 
 class ShareCompServer:
-    def __init__(self, vid, capacity=6.45, lambda_prob = 0.0001):
+    def __init__(self, vid, capacity=6.45, lambda_prob = 0.0001, kkt_allocation = True):
         self.capacity = capacity * np.clip(1+np.random.randn(), 1-RANDOMS, 1+RANDOMS) # ms-level capacity
         self.tasks = [] # not actually queue, but just accommodate users
         self.time = 0
         self.vid = vid
         self.allocations = {} # key is time slots, each dict is vid-to-resource
         self.minimum = 0.1 # self.capacity/num_of_users  # the minimum capacity if no reserved resource
-        self.location = np.random.randint(30, 100, 2) # random generate the vehicle location
+        self.location = np.random.randint(30, 200, 2) # random generate the vehicle location
         self.generated_task_num = 0
         self.generated_task = []
         self.local_computing = False
         self.lambda_prob = lambda_prob
+        self.kkt_allocation = kkt_allocation
         
         #######################  ppp look up table (pdf), for fast ppp sample
         # ppp_CDF = []
@@ -46,30 +47,30 @@ class ShareCompServer:
         
         # sub algorithm of allcation here
         # task.experienced_resource_allocation = 10
-
-        for task in self.tasks:
-            task.experienced_resource_allocation = self.capacity / len(self.tasks)
-
-        # pass ### TODO 
-
-    # def task_generator(self): 
         
-    #     # ppp sample
-    #     # generate cabin tasks from passenager
+        # KKT allocation
+        if self.kkt_allocation:
+            # remain_capacity_sum = 0
+            portion = [0]*len(self.tasks)
+            # modify = [False]*len(self.tasks)
+            for i, task in enumerate(self.tasks):
+                portion[i] = math.sqrt(task.remain_compute_size)
+            remain_capacity_sum = sum(portion)
+            sum_compute_size = 0
+            for i, task in enumerate(self.tasks):
+                task.experienced_resource_allocation = round(portion[i] / remain_capacity_sum , 8) * self.capacity
+                
+                sum_compute_size+=task.experienced_resource_allocation
+            
+            left_compute_resource = self.capacity-sum_compute_size
+            if self.tasks and left_compute_resource > 0:
+                self.tasks[np.argsort(portion)[0]].experienced_resource_allocation += left_compute_resource
+        # average allocation
+        else: 
+            for task in self.tasks:
+                task.experienced_resource_allocation = self.capacity / len(self.tasks)
 
-    #     sample_pdf = random.random()
-    #     # print("sample_pdf",sample_pdf)
-    #     # target = sample_pdf
-    #     left, right = 0, len(self.ppp_CDF) - 1
-    #     while left <= right:
-    #         mid = left + (right - left) // 2
-    #         if self.ppp_CDF[mid] == sample_pdf:
-    #             break
-    #         elif self.ppp_CDF[mid] < sample_pdf:
-    #             left = mid + 1
-    #         elif self.ppp_CDF[mid] > sample_pdf:
-    #             right = mid - 1
-    #     return mid
+        # pass ### TODO
 
     
     def step(self,):
@@ -84,13 +85,18 @@ class ShareCompServer:
         tasks_remove_list = []
 
         # dequeue the task if the task is completed, based on remaining compute size
+        vehicle_compute_resource_sum = 0
+        debug_flag = False
         for task in self.tasks: # increase compute time and total time for all tasks
-
+            if task.experienced_resource_allocation < MINI_ALLOC_COMP:
+                debug_flag = True
             average_rate = np.clip(task.experienced_resource_allocation, MINI_ALLOC_COMP, self.capacity)
 
             task.total_time += 1 # add time unit every time for total
             task.time_vehicle_compute += 1 # add time unit every time for server processing
             task.remain_compute_size = np.clip(task.remain_compute_size - average_rate, 0, None)
+            task.sum_computed_size += average_rate
+            vehicle_compute_resource_sum += average_rate
             # remove the task
             # if task.remain_compute_size <= 0:
             #     tasks_dequeued.append(copy.deepcopy(task)) # append the task for task completion
@@ -99,6 +105,10 @@ class ShareCompServer:
             if task.remain_compute_size <= 0:
                 tasks_dequeued.append(copy.deepcopy(task)) # append the task for task completion
                 tasks_remove_list.append(task) # remove it
+        
+        # check if resource is not fully utilized or overflow
+        # if debug_flag or (self.tasks and vehicle_compute_resource_sum < self.capacity):
+        #     print('warning', vehicle_compute_resource_sum)
         # remove the task by Jiahe Cao
         for remove_tk in tasks_remove_list:
             self.tasks.remove(remove_tk)
@@ -122,6 +132,7 @@ class ShareCompServer:
     
     def prob(self, time_length = 1000): 
         return math.exp(- time_length* self.lambda_prob)
+    
         
     
 

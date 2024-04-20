@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from parameters import *
 # from functions import *
 import copy
+import shutil
 
 
 from utils import Task # task
@@ -14,19 +15,20 @@ from uplink.uplink import Uplink
 from downlink.downlink import Downlink
 from compute.aug_server import ShareCompServer  # vehicle server
 
-from pso import PSO
+from pso import PSO, FPSOMR
 
 # todo: vehicle location geenration once only
 # todo: traffic generator, ppp maybe or trace
 # todo:
 
 class env_main():
-    def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=10, bandwidth_dl=10,
-                 poisson_density = 0.015, ego_poisson_density = 0.02, length = 100 , mode = 'base'):
+    def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1, bandwidth_dl=1,\
+                 poisson_density = 0.015, ego_poisson_density = 0.02, length = 100 ,\
+                 mode = 'base', kkt_allocation = False, log_folder = 'default_name'):
         self.num_vehicles = num_vehicles + 1 # first vheicle is ego vehicleç
         print("number of simulated vehicles ", num_vehicles)
-        print("poisson density ", poisson_density)
-        
+        print("ego vehicle poisson density ", ego_poisson_density)
+        print("kkt allocation ",kkt_allocation)
         np.random.seed(1000) # debug
         random.seed(1000) # debug
         # np.random.seed(int(time.time()*1000000)%1000)
@@ -42,12 +44,18 @@ class env_main():
         self.stats = {'latency':[], 'ego_v_latency':[]}
         self.free_vehicle_num = []
         self.vehicle_tasks_num = []
+        self.kkt_allocation = kkt_allocation
+        self.log_folder_name = log_folder
+        self.pso_folder_name = self.log_folder_name + '/PSO' # store pso log
+        if os.path.exists(self.pso_folder_name):
+            shutil.rmtree(self.pso_folder_name) # delete previous results
+        os.mkdir(self.pso_folder_name)
         # self.ego_vid = 100
         ###################################### generate vehicles ################################################ 
         
         # ego vehicle vid = 0
         for vid in range(self.num_vehicles):
-            self.Vehicles.append(ShareCompServer(vid, capacity=self.res_cap_vehicle)) # initialize the vehicle entity
+            self.Vehicles.append(ShareCompServer(vid, capacity=self.res_cap_vehicle, kkt_allocation = self.kkt_allocation)) # initialize the vehicle entity
         self.Vehicles[0].location = np.array((0,0))
         
         ###################################### generate wireless ################################################
@@ -103,7 +111,6 @@ class env_main():
                 break
             n+=1
         self.ego_ppp_CDF = ego_ppp_CDF
-        # print("self.ppp_pdf",self.ppp_pdf)
 
 
     def task_generator(self, ppp_CDF): # assuming allow max number of tasks within one time slot
@@ -146,7 +153,7 @@ class env_main():
                 except:
                     pass
             
-            for v in self.Vehicles:
+            for v in self.Vehicles[1:]:
                 if v.tasks: # no tasks in vehicle
                     try:
                         free_vehicle_id.remove(v.vid)
@@ -155,9 +162,29 @@ class env_main():
             
             # record free vehicle number, incoming tasks could be allocated to the free vehicles
             self.free_vehicle_num.append(len(free_vehicle_id))
+        ########################## least workload #####################
+        elif self.mode == "least":
+            vehicle_task_num = []
+            free_vehicle_id = list(range(self.num_vehicles))
             
+            for v in self.Vehicles[1:]:
+                vehicle_task_num.append(len(v.tasks))
+                if v.tasks: # no tasks in vehicle
+                    try:
+                        free_vehicle_id.remove(v.vid)
+                    except:
+                        pass
+                       
+            for task in tasks:
+                task.vid = int(np.argsort(vehicle_task_num)[0] + 1)
+                try:
+                    free_vehicle_id.remove(task.vid)
+                except:
+                    pass
+                    
+            self.free_vehicle_num.append(len(free_vehicle_id))
         ############################# edge computing mode ####################
-        elif self.mode == "pso":
+        elif self.mode == "pso" or self.mode == "fpsomr":
             free_vehicle_id = list(range(self.num_vehicles))
             local_computing_vehicle_id = [] #list(range(self.num_vehicles))
             allocated_tasks = []
@@ -226,8 +253,20 @@ class env_main():
                 fitness_list[vehicle.vid-1][5] = len(vehicle.tasks)
                 # fitness_list[vehicle.vid-1][4] = self.Vehicles[task.generated_vid].capacity
                 
-
-            result = PSO( allocated_tasks, fitness_list )
+            if self.mode =='pso':
+                result, pso_log = PSO( allocated_tasks, fitness_list)
+            elif self.mode =='fpsomr':
+                result, pso_log = FPSOMR( allocated_tasks, fitness_list)
+            fig, ax = plt.subplots()
+            ax.plot(pso_log)
+            ax.set_title('PSO best fitness value')
+            ax.set_xlabel('iterations in one PSO')
+            ax.set_ylabel("fitness value")
+            #self.log_folder_name
+            fig.savefig(self.pso_folder_name +'/' + str(self.time)+ '.png')
+            plt.close()
+            # TODO
+            # draw downlink, uplink
             
             repeated_task_num = 0
             for i, task in enumerate(allocated_tasks):
@@ -245,8 +284,6 @@ class env_main():
                         if allocated_tk.tid == tk.tid:
                             tk.vid = allocated_tk.vid
         
-        pass
-
         
 
     def step(self, ):
@@ -269,17 +306,17 @@ class env_main():
                     # create tasks
                     generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, 
                                            generated_vid = vehicle.vid) for k in range(ego_vehicle_task_num)]
-                    # copy tasks 
+                    # copy tasks
                     tasks += copy.deepcopy(generated_task)
                     self.TASKS += copy.deepcopy(generated_task)
-                    
+                
                 elif self.ppp_lambda: # other vehicles
                     in_vehicle_tasks = self.task_generator(self.ppp_CDF)
                     current_task_num += in_vehicle_tasks # record other vhicle tasks num
                     vehicle.generated_task_num = in_vehicle_tasks
                     generated_task = [Task(tid=len(self.TASKS)+1+k, curr_time=self.time, 
                                            generated_vid = vehicle.vid) for k in range(vehicle.generated_task_num)]
-                    # copy tasks 
+                    # copy tasks
                     tasks += copy.deepcopy(generated_task)
                     self.TASKS += copy.deepcopy(generated_task)
 
@@ -312,7 +349,10 @@ class env_main():
                     new_tk.vid = vid
                     self.downlink.enqueue_task(new_tk)
                     pass
-
+            elif isinstance(tk.vid,int):
+                self.downlink.enqueue_task(tk)
+                
+        
         ############################### run whole end-to-end process #######################################
 
         ############ run downlink wireless ######################
@@ -383,40 +423,47 @@ class env_main():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--length', type=int, default=1000) # ms
+    parser.add_argument('--length', type=int, default=10000) # ms
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
     parser.add_argument('-pd','--poisson_density', type=float, default=0.000)
     parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.03)
-    parser.add_argument('--mode', type=str, default="pso")
+    # TODO
+    # 1. ego computing 
+    # 2. Baseline: least workload (average resource)
+    # 3. Baseline: other algorithm
+    parser.add_argument('--mode', type=str, default="least")
     parser.add_argument('--show_figure', action="store_true") #
+    parser.add_argument('--no_kkt', action="store_false") # KKT for in vheicle resource allocation
     args = parser.parse_args()
-
+    
+    # log file and results are stored here
+    folder_name = 'intensity %s, length %s, mode %s, kkt %s' %(args.ego_poisson_density, args.length, args.mode, args.no_kkt)
+    # if os.path.exists(folder_name):
+    # # check if previous experiment results are stored in this folder 
+    #     if os.path.getsize(folder_name):
+    #         # delete
+    #         for file in os.listdir(folder_name)[0:]:
+    #             file_path = folder_name+'/'+file 
+    #             os.remove(file_path)
+    # else:
+    #     os.mkdir(folder_name)
+    if os.path.exists(folder_name):
+        shutil.rmtree(folder_name) # delete previous results
+    os.mkdir(folder_name)
+       
     env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
                    ego_poisson_density = args.ego_poisson_density,
-                   length = args.length, mode = args.mode)
+                   length = args.length, mode = args.mode, kkt_allocation = args.no_kkt, log_folder = folder_name)
 
     start_time = time.time()
-    for i in tqdm(range(int(2*args.length))):
+    for i in tqdm(range(int(1.25*args.length))):
         # random select vid and action
         initial_state = env.step()
+    
     print("time usage:", time.time()-start_time)
 
-    output_hal = open('finished tasks, ego V density %s, time length %s, mode %s.pkl'\
-                %(args.ego_poisson_density, args.length, args.mode), 'wb')
-    # for tk in env.finishedTASKS:
-    str = pickle.dumps(env.finishedTASKS)
-    output_hal.write(str)
-    output_hal.close()
-
-    output_hal = open('all tasks, ego V density %s, time length %s, mode %s.pkl'\
-                %(args.ego_poisson_density, args.length, args.mode), 'wb')
-    # for tk in env.finishedTASKS:
-    str = pickle.dumps(env.TASKS)
-    output_hal.write(str)
-    output_hal.close()
-    
     # plot the CDF of the achieved all user latency
     
     # fig, ax = plt.subplots()
@@ -440,20 +487,13 @@ if __name__ == '__main__':
     ax1.set_title('CDF of time latency')
     ax1.set_xlabel('latency')
     ax1.set_ylabel("CDF")
-
-    # ax2 = ax[0,1]
-    # ax2.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
-    # fix_hist_step_vertical_line_at_end(ax2)
-    # ax2.set_title('CDF of ego v time latency')
-    # ax2.set_xlabel('latency')
-    # ax2.set_ylabel("CDF")
     
     ax2 = ax[0,1]
     ax2.plot(env.repeated_task_num)
     ax2.set_title('average duplicated task number')
     ax2.set_xlabel('time')
     ax2.set_ylabel("duplicated num")  
-     
+    
     ax3 = ax[1,0]
     ax3.plot(env.free_vehicle_num)
     ax3.set_title('free vehicle number, average = %s' %(statistics.mean(env.free_vehicle_num[:args.length])))
@@ -465,19 +505,52 @@ if __name__ == '__main__':
     ax4.set_title('average task number, average = %s' %(statistics.mean(env.vehicle_tasks_num[:args.length])))
     ax4.set_xlabel('time')
     ax4.set_ylabel("tasks number")
-    
-    # ax4 = ax[1,1]
-    # ax4.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
-    # fix_hist_step_vertical_line_at_end(ax4)
-    # ax4.set_title('CDF of ego v time latency')
-    # ax4.set_xlabel('latency')
-    # ax4.set_ylabel("CDF")
 
     if args.show_figure:
        plt.show()
     
-    fig.savefig('ego V density %s and time length %s, mode %s.png'\
-                %(args.ego_poisson_density, args.length, args.mode))
+    folder_name = 'intensity %s, length %s, mode %s, kkt %s' %(args.ego_poisson_density, args.length, args.mode, args.no_kkt)
+    fig.savefig(folder_name+'/'+'cdf.png')
     # save_subfig(fig, ax1, 'test CDF of latency on PP density %s.png' %(args.poisson_density))
+    
+    output_hal = open(folder_name+'/'+'finished tasks.pkl','wb')
+    # for tk in env.finishedTASKS:
+    str = pickle.dumps(env.finishedTASKS)
+    output_hal.write(str)
+    output_hal.close()
+
+    output_hal = open(folder_name+'/'+'all tasks.pkl','wb')
+    # for tk in env.finishedTASKS:
+    str = pickle.dumps(env.TASKS)
+    output_hal.write(str)
+    output_hal.close()
+    print('finishe task num',len(env.finishedTASKS))
+    print('task num',len(env.TASKS))
+    avg_compute_time = 0
+    for i, tk in enumerate(env.finishedTASKS):
+        avg_compute_time += tk.time_vehicle_compute
+    print('average compute time', avg_compute_time/(i+1))
+
+    avg_ul_time = 0
+    for i, tk in enumerate(env.finishedTASKS):
+        avg_ul_time += tk.time_ul_transmit
+    print('average uplink time', avg_ul_time/(i+1))
+    
+    avg_dl_time = 0
+    for i, tk in enumerate(env.finishedTASKS):
+        avg_dl_time += tk.time_dl_transmit
+    print('average downlink time', avg_dl_time/(i+1))
+
+    sum = 0
+    for i, tk in enumerate(env.finishedTASKS):
+        sum += tk.sum_computed_size 
+    print('average sum of allocated compute size', sum)
+ 
+    sum = 0
+    for i, tk in enumerate(env.finishedTASKS):
+        sum += tk.compute_size 
+    print('average original compute size', sum)
+    
+    print('average duplicated task num', len(env.finishedTASKS)/len(env.TASKS))
+    
     print('done')
-    np.save("ego_v_latency.npy",env.stats['ego_v_latency'])
