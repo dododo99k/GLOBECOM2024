@@ -16,11 +16,6 @@ from downlink.downlink import Downlink
 from compute.aug_server import ShareCompServer  # vehicle server
 
 from pso import PSO, FPSOMR
-
-# todo: vehicle location geenration once only
-# todo: traffic generator, ppp maybe or trace
-# todo:
-
 class env_main():
     def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1, bandwidth_dl=1,\
                  poisson_density = 0.015, ego_poisson_density = 0.02, length = 100 ,\
@@ -176,7 +171,7 @@ class env_main():
                         pass
                        
             for task in tasks:
-                task.vid = int(np.argsort(vehicle_task_num)[0] + 1)
+                task.vid = [int(np.argsort(vehicle_task_num)[0] + 1), int(np.argsort(vehicle_task_num)[1] + 1)]
                 try:
                     free_vehicle_id.remove(task.vid)
                 except:
@@ -384,7 +379,8 @@ class env_main():
                     if tk.generated_vid == 0:
                         self.stats['ego_v_latency'].append(tk.total_time)
                     tk.post_process() # calculate avg data rate and compute rate
-        
+                    self.finishedTASKS.append(tk)
+                    
         self.vehicle_tasks_num.append(vehicle_tasks_num/len(self.Vehicles))
 
         ############ run uplink wireless ######################
@@ -512,6 +508,11 @@ if __name__ == '__main__':
     folder_name = 'intensity %s, length %s, mode %s, kkt %s' %(args.ego_poisson_density, args.length, args.mode, args.no_kkt)
     fig.savefig(folder_name+'/'+'cdf.png')
     # save_subfig(fig, ax1, 'test CDF of latency on PP density %s.png' %(args.poisson_density))
+    
+    output_hal = open(folder_name+'/'+'ego vehicle latency cdf.pkl','wb')
+    str = pickle.dumps(env.stats['ego_v_latency'])
+    output_hal.write(str)
+    output_hal.close()
     
     output_hal = open(folder_name+'/'+'finished tasks.pkl','wb')
     # for tk in env.finishedTASKS:

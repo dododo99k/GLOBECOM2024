@@ -46,8 +46,12 @@ class Task:
         self.experienced_resource_allocation = 0
 
     def post_process(self,):
-        self.avg_experenced_data_rate = self.task_size / (self.time_ul_transmit)
-        self.avg_experenced_compute_rate = self.compute_size / self.time_vehicle_compute
+        try:
+            self.avg_experenced_data_rate = self.task_size / (self.time_ul_transmit)
+        except: pass
+        try:
+            self.avg_experenced_compute_rate = self.compute_size / self.time_vehicle_compute
+        except: pass
         self.dl_time_percentage = self.time_ul_transmit/self.total_time
         self.ul_time_percentage = self.time_ul_transmit/self.total_time
         self.compute_time_percentage = self.time_vehicle_compute/self.total_time
