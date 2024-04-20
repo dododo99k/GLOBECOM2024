@@ -429,7 +429,7 @@ if __name__ == '__main__':
     # 1. ego computing 
     # 2. Baseline: least workload (average resource)
     # 3. Baseline: other algorithm
-    parser.add_argument('--mode', type=str, default="least")
+    parser.add_argument('--mode', type=str, default="pso") # pso, fpsomr, base, least
     parser.add_argument('--show_figure', action="store_true") #
     parser.add_argument('--no_kkt', action="store_false") # KKT for in vheicle resource allocation
     args = parser.parse_args()
