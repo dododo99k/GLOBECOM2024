@@ -46,7 +46,7 @@ def PSO(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
                         *(fitness_list[vid][4] + particle_count[vid])
                     
                     tasks_time[tkid] += tasks[tkid].remain_compute_size/fitness_list[vid][2]\
-                        *(fitness_list[vid][4] + particle_count[vid])
+                        *(fitness_list[vid][5] + particle_count[vid])
 
                     # prob[tkid] = 1 - edge_vehicles[vid].prob(tasks_time[tkid]) # fail prob
                     prob[tkid] = 1 - math.exp(- tasks_time[tkid]* lambda_prob)
@@ -60,7 +60,6 @@ def PSO(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
         # print('fitness func time:', time.time()-fitness_func_start_time)
         return  [value, delete_flag]
 
-    
     # c1 = 1.5
     # c2 = 1.5
     # w_max = 0.8
@@ -84,6 +83,13 @@ def PSO(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
     
     for i in range(N):
         p_best[i], delete_flag = fitness_func(x[i, :], i)
+        # renew particle which can not satisify the latency probability restriction
+        if delete_flag:
+            for _ in range(10): # renew maximization times
+                x[j,:] = np.random.randint(0, 2, [1, D ])
+                fitness_value, delete_flag = fitness_func(x[j,:], i)
+                if not delete_flag: # once the new particle fulfill restriction
+                    break        
 
     # 初始化全局最优位置与最优值
     g_best = 100000000000000000
@@ -92,8 +98,7 @@ def PSO(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
         if p_best[i] < g_best:
             g_best = p_best[i]
             x_best = x[i, :].copy()
-    # TODO reocrd history value
-    # TODO adaptive MU
+
     gb = np.ones(T)  # global best
     for i in range(T):
         for j in range(N):
@@ -131,7 +136,6 @@ def PSO(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
                 r = np.random.rand(1)
                 x[j, ii] = 1 if vx[j, ii] > r else 0
         gb[i] = g_best
-        
     
     allocation =[]
     for i in range(tasks_num):
@@ -139,8 +143,6 @@ def PSO(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
         vehicle_index = [x+1 for x, y in list(enumerate(x_temp)) if y == 1]
         allocation.append(vehicle_index)
     
-    # print('time usage:', all_time)
-    pass
     return allocation, gb
 
 def FPSOMR(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
@@ -185,7 +187,7 @@ def FPSOMR(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
                         *(fitness_list[vid][4] + particle_count[vid])
                     
                     tasks_time[tkid] += tasks[tkid].remain_compute_size/fitness_list[vid][2]\
-                        *(fitness_list[vid][4] + particle_count[vid])
+                        *(fitness_list[vid][5] + particle_count[vid])
 
                     # prob[tkid] = 1 - edge_vehicles[vid].prob(tasks_time[tkid]) # fail prob
                     prob[tkid] = 1 - math.exp(- tasks_time[tkid]* lambda_prob)
@@ -254,7 +256,7 @@ def FPSOMR(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
             global_original_best = min(local_best_fitness, fitness_val_list[j])
         
         exterior_penalty = global_original_best - local_best_fitness
-            
+    
         for j in range(N):
             # 更新每个个体最优值和最优位置
             # fitness_value, delete_flag = fitness_func(x[j,:], i)
@@ -286,13 +288,11 @@ def FPSOMR(tasks, fitness_list, N = 100, T = 100 , c1 = 1.5, c2 = 1.5,
                 r = np.random.rand(1)
                 x[j, ii] = 1 if vx[j, ii] > r else 0
         gb[i] = g_best
-        
+    
     allocation =[]
     for i in range(tasks_num):
         x_temp = x_best[i*vehicles_num:(i+1)*vehicles_num]
         vehicle_index = [x+1 for x, y in list(enumerate(x_temp)) if y == 1]
         allocation.append(vehicle_index)
     
-    # print('time usage:', all_time)
-    pass
     return allocation, gb

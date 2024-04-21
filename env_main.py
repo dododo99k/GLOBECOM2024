@@ -176,7 +176,9 @@ class env_main():
                     free_vehicle_id.remove(task.vid)
                 except:
                     pass
-                    
+                
+            self.repeated_task_num.append(2)
+            
             self.free_vehicle_num.append(len(free_vehicle_id))
         ############################# edge computing mode ####################
         elif self.mode == "pso" or self.mode == "fpsomr":
@@ -251,7 +253,13 @@ class env_main():
             if self.mode =='pso':
                 result, pso_log = PSO( allocated_tasks, fitness_list)
             elif self.mode =='fpsomr':
-                result, pso_log = FPSOMR( allocated_tasks, fitness_list)
+                result = []
+                # since FPSOMR only deals with single task at one time
+                for tk in allocated_tasks:
+                    result_one_tk, pso_log = FPSOMR( [tk], fitness_list) 
+                    result.append(result_one_tk[0])
+                # print('yes', result)
+            
             fig, ax = plt.subplots()
             ax.plot(pso_log)
             ax.set_title('PSO best fitness value')
@@ -338,15 +346,16 @@ class env_main():
         for tk in tasks:
             if isinstance(tk.vid,list):
                 # repeated allocation
+                # print('yes',tk.vid)
                 vid_list = tk.vid
                 for vid in vid_list:
-                    new_tk =copy.copy(tk)
+                    new_tk = copy.copy(tk)
                     new_tk.vid = vid
                     self.downlink.enqueue_task(new_tk)
                     pass
             elif isinstance(tk.vid,int):
-                self.downlink.enqueue_task(tk)
                 
+                self.downlink.enqueue_task(tk)
         
         ############################### run whole end-to-end process #######################################
 
@@ -429,10 +438,13 @@ if __name__ == '__main__':
     # 1. ego computing 
     # 2. Baseline: least workload (average resource)
     # 3. Baseline: other algorithm
-    parser.add_argument('--mode', type=str, default="pso") # pso, fpsomr, base, least
-    parser.add_argument('--show_figure', action="store_true") #
-    parser.add_argument('--no_kkt', action="store_false") # KKT for in vheicle resource allocation
+    parser.add_argument('-m','--mode', type=str, default="pso") # pso, fpsomr, base, least
+    parser.add_argument('-sf','--show_figure', action="store_true") #
+    parser.add_argument('-nkkt','--no_kkt', action="store_false") # KKT for in vheicle resource allocation
     args = parser.parse_args()
+    
+    if args.mode != 'pso':
+        args.no_kkt = False # means average resource
     
     # log file and results are stored here
     folder_name = 'intensity %s, length %s, mode %s, kkt %s' %(args.ego_poisson_density, args.length, args.mode, args.no_kkt)
@@ -448,7 +460,7 @@ if __name__ == '__main__':
     if os.path.exists(folder_name):
         shutil.rmtree(folder_name) # delete previous results
     os.mkdir(folder_name)
-       
+    
     env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
                    ego_poisson_density = args.ego_poisson_density,
                    length = args.length, mode = args.mode, kkt_allocation = args.no_kkt, log_folder = folder_name)
@@ -546,12 +558,12 @@ if __name__ == '__main__':
     for i, tk in enumerate(env.finishedTASKS):
         sum += tk.sum_computed_size 
     print('average sum of allocated compute size', sum)
- 
+    
     sum = 0
     for i, tk in enumerate(env.finishedTASKS):
         sum += tk.compute_size 
     print('average original compute size', sum)
-    
-    print('average duplicated task num', len(env.finishedTASKS)/len(env.TASKS))
+
+    print('average duplicated task num', np.sum(env.repeated_task_num)/ len(env.repeated_task_num) )
     
     print('done')
