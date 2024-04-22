@@ -60,6 +60,7 @@ def path_loss_calculator(frequency, distance, ant_height, ant_type,
     """
     if 0.05 < frequency <= 100:
         # here path_loss includes path loss and shadowing
+        
         path_loss = etsi_tr_138_901(frequency, distance, ant_height, ant_type,
             building_height, street_width, settlement_type, type_of_sight,
             ue_height, above_roof, indoor, seed_value, iterations
@@ -112,7 +113,7 @@ def etsi_tr_138_901(frequency, distance, ant_height, ant_type,
     d2d_out = distance - d2d_in
     d2d = d2d_out + d2d_in
     d3d = sqrt((d2d_out + d2d_in)**2 + (hbs - hut)**2)
-
+    
     check_3gpp_applicability(building_height, street_width, ant_height, ue_height)
 
     if ant_type == 'macro':

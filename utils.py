@@ -20,15 +20,15 @@ class Task:
         self.time_dl_transmit = 0 #  the time consumed in ul
         
         # remain_compute_size_list = [200, 500, 700]  
-        remain_compute_size_list = list(range(400, 1600, 10))
+        remain_compute_size_list = list(range(1000, 2000, 10))
         self.compute_size = random.sample(remain_compute_size_list, 1)[0]# TODO  XXX
         self.remain_compute_size = self.compute_size
         # used by wireless
-        task_size_list = list(range(40, 160, 10)) # kb
+        task_size_list = list(range(10, 100, 10)) # kb
         self.task_size = random.sample(task_size_list, 1)[0]# TODO  XXX
         self.remain_size_dl = self.task_size
         # used by broadcast
-        result_size_list = list(range(40, 160, 10)) # kb
+        result_size_list = list(range(10, 100, 10)) # kb
         self.result_size = random.sample(result_size_list, 1)[0]# TODO  XXX
         self.remain_size_ul = self.result_size
 

@@ -17,12 +17,12 @@ PARAMETERS = {
         'seed_value2': 2,
         'indoor_users_percentage': 50,
         'los_breakpoint_m': 500,
-        'tx_macro_baseline_height': 30,
+        'tx_macro_baseline_height': 2, #since ego vehicle
         'tx_macro_power': 40,
         'tx_macro_gain': 16,
         'tx_macro_losses': 1,
-        'tx_micro_baseline_height': 10,
-        'tx_micro_power': 24,
+        'tx_micro_baseline_height': 10, #since ego vehicle
+        'tx_micro_power': 20, #Jiahe Cao, original 24
         'tx_micro_gain': 5,
         'tx_micro_losses': 1,
         'rx_gain': 4,
@@ -202,6 +202,7 @@ class Downlink:
 
         num_of_active_users = self.update_receivers_activations()
         if num_of_active_users <= 0: return trans_completion
+        num_of_active_users = 1 # since only communicate to ego vehicle, Jiahe Cao
         indiv_bandwidth = self.bandwidth / num_of_active_users
 
         # run the simulation and get the data rate
@@ -227,7 +228,8 @@ class Downlink:
                     # reset the reciever metric
                     receiver.tasks.remove(task)
 
-        np.random.seed(int(time.time()))
+        #np.random.seed(int(time.time()))
+
         return trans_completion
 
     def estimate_link_budget(self, frequency, bandwidth,
@@ -277,7 +279,7 @@ class Downlink:
             interference, i_model, ave_distance, ave_inf_pl = self.estimate_interference(
                 receiver, frequency, environment, simulation_parameters)
             
-            interference = list(np.array(interference) - 50)
+            interference = list(np.array(interference) - 100000)  # Jiahe Cao
             
             noise = self.estimate_noise(
                 bandwidth
@@ -368,7 +370,7 @@ class Downlink:
         )
 
         strt_distance = temp_line.length
-
+        
         if strt_distance < 20:
             strt_distance = 20
 
@@ -376,10 +378,11 @@ class Downlink:
         ant_type =  self.transmitter.ant_type
 
         if strt_distance < simulation_parameters['los_breakpoint_m'] :
+            
             type_of_sight = 'los'
         else:
             type_of_sight = 'nlos'
-
+            
         path_loss, model = path_loss_calculator(
             frequency,
             strt_distance,
@@ -496,8 +499,9 @@ class Downlink:
             )
 
             interference_strt_distance = temp_line.length
+            #print('interference_strt_distance',interference_strt_distance)
             if interference_strt_distance < 20:
-                interference_strt_distance == 20
+                interference_strt_distance = 20
 
             ant_height = interfering_transmitter.ant_height
             ant_type =  interfering_transmitter.ant_type
@@ -506,7 +510,7 @@ class Downlink:
                 type_of_sight = 'los'
             else:
                 type_of_sight = 'nlos'
-
+            # print('interference_strt_distance',interference_strt_distance)
             path_loss, model = path_loss_calculator(
                 frequency,
                 interference_strt_distance,
@@ -634,7 +638,7 @@ class Downlink:
         network_load = simulation_parameters['network_load']
         i_summed = sum(interference_list)
         raw_sum_of_interference = i_summed * (network_load/100)
-
+        # raw_sum_of_interference = 0 # Jiahe Cao
         raw_noise = 10**noise
 
         i_plus_n = (raw_sum_of_interference + raw_noise)
@@ -642,6 +646,8 @@ class Downlink:
         sinr = round(np.log10(
             raw_received_power / i_plus_n
             ),2)
+        
+        # sinr -= 33 # Jiahe Cao
 
         return received_power, raw_sum_of_interference, noise, i_plus_n, sinr
 
@@ -674,7 +680,6 @@ class Downlink:
 
                 lower_sinr = lower[5]
                 upper_sinr = upper[5]
-
                 if sinr >= lower_sinr and sinr < upper_sinr:
                     spectral_efficiency = lower[4]
                     return spectral_efficiency
@@ -691,7 +696,7 @@ class Downlink:
                 # if sinr < lowest_value[5]:
 
                 #     spectral_efficiency = 0
-                return spectral_efficiency
+        return spectral_efficiency
 
 
     def estimate_average_capacity(self, bandwidth, spectral_efficiency):

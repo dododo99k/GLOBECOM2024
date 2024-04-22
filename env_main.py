@@ -15,11 +15,12 @@ from uplink.uplink import Uplink
 from downlink.downlink import Downlink
 from compute.aug_server import ShareCompServer  # vehicle server
 
-from pso import PSO, FPSOMR
+from pso import PSO
+from fpsomr import FPSOMR
 class env_main():
     def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1, bandwidth_dl=1,\
                  poisson_density = 0.015, ego_poisson_density = 0.02, length = 100 ,\
-                 mode = 'base', kkt_allocation = False, log_folder = 'default_name'):
+                 mode = 'base', kkt_allocation = False, log_folder = 'default_name', h_min = 0.1):
         self.num_vehicles = num_vehicles + 1 # first vheicle is ego vehicleç
         print("number of simulated vehicles ", num_vehicles)
         print("ego vehicle poisson density ", ego_poisson_density)
@@ -45,6 +46,7 @@ class env_main():
         if os.path.exists(self.pso_folder_name):
             shutil.rmtree(self.pso_folder_name) # delete previous results
         os.mkdir(self.pso_folder_name)
+        self.h_min = h_min
         # self.ego_vid = 100
         ###################################### generate vehicles ################################################ 
         
@@ -169,15 +171,38 @@ class env_main():
                         free_vehicle_id.remove(v.vid)
                     except:
                         pass
-                       
+        
             for task in tasks:
-                task.vid = [int(np.argsort(vehicle_task_num)[0] + 1), int(np.argsort(vehicle_task_num)[1] + 1)]
+                task.vid = [int(np.argsort(vehicle_task_num)[0] + 1)]#, int(np.argsort(vehicle_task_num)[1] + 1)]
                 try:
                     free_vehicle_id.remove(task.vid)
                 except:
                     pass
                 
-            self.repeated_task_num.append(2)
+            self.repeated_task_num.append(1)
+            
+            self.free_vehicle_num.append(len(free_vehicle_id))
+        ######## random
+        elif self.mode == "random":
+            vehicle_task_num = []
+            free_vehicle_id = list(range(self.num_vehicles))
+            
+            for v in self.Vehicles[1:]:
+                vehicle_task_num.append(len(v.tasks))
+                if v.tasks: # no tasks in vehicle
+                    try:
+                        free_vehicle_id.remove(v.vid)
+                    except:
+                        pass
+                       
+            for task in tasks:
+                task.vid = [random.randint(1, self.num_vehicles-1) ]
+                try:
+                    free_vehicle_id.remove(task.vid)
+                except:
+                    pass
+                
+            self.repeated_task_num.append(1)
             
             self.free_vehicle_num.append(len(free_vehicle_id))
         ############################# edge computing mode ####################
@@ -251,14 +276,16 @@ class env_main():
                 # fitness_list[vehicle.vid-1][4] = self.Vehicles[task.generated_vid].capacity
                 
             if self.mode =='pso':
-                result, pso_log = PSO( allocated_tasks, fitness_list)
+                # print(self.time, len(allocated_tasks))
+                result, pso_log = PSO( allocated_tasks, fitness_list, h_min = self.h_min)
             elif self.mode =='fpsomr':
-                result = []
-                # since FPSOMR only deals with single task at one time
-                for tk in allocated_tasks:
-                    result_one_tk, pso_log = FPSOMR( [tk], fitness_list) 
-                    result.append(result_one_tk[0])
-                # print('yes', result)
+                # one task at one time
+                # result = []
+                # # since FPSOMR only deals with single task at one time
+                # for tk in allocated_tasks:
+                #     result_one_tk, pso_log = FPSOMR( [tk], fitness_list) 
+                #     result.append(result_one_tk[0])
+                result, pso_log = FPSOMR( allocated_tasks, fitness_list, h_min = self.h_min)
             
             fig, ax = plt.subplots()
             ax.plot(pso_log)
@@ -428,12 +455,12 @@ class env_main():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--length', type=int, default=10000) # ms
+    parser.add_argument('-l','--length', type=int, default=10000) # ms
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
     parser.add_argument('--traffic', type=int, default=10)
     parser.add_argument('-pd','--poisson_density', type=float, default=0.000)
-    parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.03)
+    parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.05)
     # TODO
     # 1. ego computing 
     # 2. Baseline: least workload (average resource)
@@ -441,13 +468,15 @@ if __name__ == '__main__':
     parser.add_argument('-m','--mode', type=str, default="pso") # pso, fpsomr, base, least
     parser.add_argument('-sf','--show_figure', action="store_true") #
     parser.add_argument('-nkkt','--no_kkt', action="store_false") # KKT for in vheicle resource allocation
+    parser.add_argument('-hm','--H_MIN', type=float, default=0.1) # KKT for in vheicle resource allocation
     args = parser.parse_args()
     
     if args.mode != 'pso':
         args.no_kkt = False # means average resource
     
     # log file and results are stored here
-    folder_name = 'intensity %s, length %s, mode %s, kkt %s' %(args.ego_poisson_density, args.length, args.mode, args.no_kkt)
+    folder_name = 'intensity %s, v num %s, length %s, mode %s, H_MIN %s' \
+        %(args.ego_poisson_density, args.car_num , args.length, args.mode, args.H_MIN)
     # if os.path.exists(folder_name):
     # # check if previous experiment results are stored in this folder 
     #     if os.path.getsize(folder_name):
@@ -461,12 +490,13 @@ if __name__ == '__main__':
         shutil.rmtree(folder_name) # delete previous results
     os.mkdir(folder_name)
     
+    
     env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
                    ego_poisson_density = args.ego_poisson_density,
-                   length = args.length, mode = args.mode, kkt_allocation = args.no_kkt, log_folder = folder_name)
+                   length = args.length, mode = args.mode, kkt_allocation = args.no_kkt, log_folder = folder_name, h_min = args.H_MIN)
 
     start_time = time.time()
-    for i in tqdm(range(int(1.25*args.length))):
+    for i in tqdm(range(int(1.5*args.length))):
         # random select vid and action
         initial_state = env.step()
     
@@ -517,7 +547,6 @@ if __name__ == '__main__':
     if args.show_figure:
        plt.show()
     
-    folder_name = 'intensity %s, length %s, mode %s, kkt %s' %(args.ego_poisson_density, args.length, args.mode, args.no_kkt)
     fig.savefig(folder_name+'/'+'cdf.png')
     # save_subfig(fig, ax1, 'test CDF of latency on PP density %s.png' %(args.poisson_density))
     

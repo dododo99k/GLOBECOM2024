@@ -17,12 +17,12 @@ PARAMETERS = {
         'seed_value2': 2,
         'indoor_users_percentage': 50,
         'los_breakpoint_m': 500,
-        'tx_macro_baseline_height': 30,
+        'tx_macro_baseline_height': 2, #since ego vehicle
         'tx_macro_power': 40,
         'tx_macro_gain': 16,
         'tx_macro_losses': 1,
-        'tx_micro_baseline_height': 10,
-        'tx_micro_power': 24,
+        'tx_micro_baseline_height': 10, #since ego vehicle
+        'tx_micro_power': 20, #Jiahe Cao, original 24
         'tx_micro_gain': 5,
         'tx_micro_losses': 1,
         'rx_gain': 4,
@@ -202,6 +202,7 @@ class Uplink:
 
         num_of_active_users = self.update_receivers_activations()
         if num_of_active_users <= 0: return trans_completion
+        num_of_active_users = 1 # since only communicate to ego vehicle, Jiahe Cao
         indiv_bandwidth = self.bandwidth / num_of_active_users
 
         # runt he simulation and get the data rate
@@ -227,7 +228,7 @@ class Uplink:
                     # reset the reciever metric
                     receiver.tasks.remove(task)
 
-        np.random.seed(int(time.time()))
+        # np.random.seed(int(time.time()))
         return trans_completion
 
     def estimate_link_budget(self, frequency, bandwidth,
@@ -277,7 +278,7 @@ class Uplink:
             interference, i_model, ave_distance, ave_inf_pl = self.estimate_interference(
                 receiver, frequency, environment, simulation_parameters)
             
-            interference = list(np.array(interference) -50)
+            interference = list(np.array(interference) - 100000)
             
             noise = self.estimate_noise(
                 bandwidth
@@ -497,7 +498,7 @@ class Uplink:
 
             interference_strt_distance = temp_line.length
             if interference_strt_distance < 20:
-                interference_strt_distance == 20
+                interference_strt_distance = 20
 
             ant_height = interfering_transmitter.ant_height
             ant_type =  interfering_transmitter.ant_type
@@ -506,7 +507,7 @@ class Uplink:
                 type_of_sight = 'los'
             else:
                 type_of_sight = 'nlos'
-
+            # print('interference_strt_distance',interference_strt_distance)
             path_loss, model = path_loss_calculator(
                 frequency,
                 interference_strt_distance,
@@ -634,7 +635,7 @@ class Uplink:
         network_load = simulation_parameters['network_load']
         i_summed = sum(interference_list)
         raw_sum_of_interference = i_summed * (network_load/100)
-
+        # raw_sum_of_interference = 0 # Jiahe Cao
         raw_noise = 10**noise
 
         i_plus_n = (raw_sum_of_interference + raw_noise)
@@ -643,6 +644,8 @@ class Uplink:
             raw_received_power / i_plus_n
             ),2)
 
+        # sinr -= 33 # Jiahe Cao
+        
         return received_power, raw_sum_of_interference, noise, i_plus_n, sinr
 
 
@@ -691,7 +694,7 @@ class Uplink:
                 # if sinr < lowest_value[5]:
 
                 #     spectral_efficiency = 0
-                return spectral_efficiency
+        return spectral_efficiency
 
 
     def estimate_average_capacity(self, bandwidth, spectral_efficiency):
