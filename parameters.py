@@ -8,6 +8,7 @@ RANDOMS = 0.0 # the min (1-RANDOMS) and max (1+RANDOMS) regarding vehicle and se
 MINI_ALLOC_RADIO = 0.05
 MINI_ALLOC_COMP = 0.1
 
+lambda_prob = 0.003
 
 def save_subfig(fig,ax,fig_name,save_path = './'):
     scale = 2

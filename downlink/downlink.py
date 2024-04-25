@@ -202,7 +202,7 @@ class Downlink:
 
         num_of_active_users = self.update_receivers_activations()
         if num_of_active_users <= 0: return trans_completion
-        num_of_active_users = 1 # since only communicate to ego vehicle, Jiahe Cao
+        num_of_active_users = len(self.receivers) # since only communicate to ego vehicle, Jiahe Cao
         indiv_bandwidth = self.bandwidth / num_of_active_users
 
         # run the simulation and get the data rate
@@ -279,7 +279,6 @@ class Downlink:
             interference, i_model, ave_distance, ave_inf_pl = self.estimate_interference(
                 receiver, frequency, environment, simulation_parameters)
             
-            interference = list(np.array(interference) - 100000)  # Jiahe Cao
             
             noise = self.estimate_noise(
                 bandwidth

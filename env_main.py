@@ -18,14 +18,14 @@ from compute.aug_server import ShareCompServer  # vehicle server
 from pso import PSO
 from fpsomr import FPSOMR
 class env_main():
-    def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=1, bandwidth_dl=1,\
-                 poisson_density = 0.015, ego_poisson_density = 0.02, length = 100 ,\
-                 mode = 'base', kkt_allocation = False, log_folder = 'default_name', h_min = 0.1):
+    def __init__(self, num_vehicles=20, capacity_vehicle=10, bandwidth_ul=10, bandwidth_dl=10,\
+                 poisson_density = 0, ego_poisson_density = 0.02, length = 100 ,\
+                 mode = 'pso', kkt_allocation = False, log_folder = 'default_name', h_min = 0.2):
         self.num_vehicles = num_vehicles + 1 # first vheicle is ego vehicleç
         print("number of simulated vehicles ", num_vehicles)
         print("ego vehicle poisson density ", ego_poisson_density)
         print("kkt allocation ",kkt_allocation)
-        np.random.seed(1000) # debug
+        np.random.seed(11111111) # debug
         random.seed(1000) # debug
         # np.random.seed(int(time.time()*1000000)%1000)
 
@@ -40,6 +40,7 @@ class env_main():
         self.stats = {'latency':[], 'ego_v_latency':[]}
         self.free_vehicle_num = []
         self.vehicle_tasks_num = []
+        self.allocation_history = []
         self.kkt_allocation = kkt_allocation
         self.log_folder_name = log_folder
         self.pso_folder_name = self.log_folder_name + '/PSO' # store pso log
@@ -225,7 +226,6 @@ class env_main():
             
             
             # size : (number of edge vehicles, 3), downlink speed, uplink speed, remaining tasks computing time
-
             # fitness_list[:][0] : wireless dl transmitting speed
             # fitness_list[:][1] : wireless ul transmitting speed
             # fitness_list[:][2] : vehicle computing capacity
@@ -254,8 +254,6 @@ class env_main():
                 elif task.generated_vid > 0:
                     task.vid = task.generated_vid
                     self.Vehicles[task.generated_vid].local_computing = True
-                    # fitness_list[task.generated_vid-1][2] += \
-                    #     task.remain_compute_size/self.Vehicles[task.generated_vid].capacity
                     try:
                         free_vehicle_id.remove(task.vid)
                     except:
@@ -276,23 +274,15 @@ class env_main():
                 # fitness_list[vehicle.vid-1][4] = self.Vehicles[task.generated_vid].capacity
                 
             if self.mode =='pso':
-                # print(self.time, len(allocated_tasks))
-                result, pso_log = PSO( allocated_tasks, fitness_list, h_min = self.h_min)
+                result,flag,prob, pso_log = PSO( allocated_tasks, fitness_list, h_min = self.h_min)
             elif self.mode =='fpsomr':
-                # one task at one time
-                # result = []
-                # # since FPSOMR only deals with single task at one time
-                # for tk in allocated_tasks:
-                #     result_one_tk, pso_log = FPSOMR( [tk], fitness_list) 
-                #     result.append(result_one_tk[0])
-                result, pso_log = FPSOMR( allocated_tasks, fitness_list, h_min = self.h_min)
-            
+                result,flag,prob, pso_log = FPSOMR( allocated_tasks, fitness_list, h_min = self.h_min)
+            self.allocation_history.append([self.time,result,flag,prob ])
             fig, ax = plt.subplots()
             ax.plot(pso_log)
             ax.set_title('PSO best fitness value')
             ax.set_xlabel('iterations in one PSO')
             ax.set_ylabel("fitness value")
-            #self.log_folder_name
             fig.savefig(self.pso_folder_name +'/' + str(self.time)+ '.png')
             plt.close()
             # TODO
@@ -313,7 +303,9 @@ class env_main():
                     for allocated_tk in allocated_tasks:
                         if allocated_tk.tid == tk.tid:
                             tk.vid = allocated_tk.vid
-        
+
+            
+            pass
         
 
     def step(self, ):
@@ -381,7 +373,6 @@ class env_main():
                     self.downlink.enqueue_task(new_tk)
                     pass
             elif isinstance(tk.vid,int):
-                
                 self.downlink.enqueue_task(tk)
         
         ############################### run whole end-to-end process #######################################
@@ -404,7 +395,6 @@ class env_main():
             # run computation on vehicle
             vehicle_tasks_num += len(vehicle.tasks)
             complete_compute = vehicle.step()
-            
             for tk in complete_compute:
                 if tk.vid != tk.generated_vid: # upload tasks
                     self.uplink.enqueue_task(tk)
@@ -416,7 +406,6 @@ class env_main():
                         self.stats['ego_v_latency'].append(tk.total_time)
                     tk.post_process() # calculate avg data rate and compute rate
                     self.finishedTASKS.append(tk)
-                    
         self.vehicle_tasks_num.append(vehicle_tasks_num/len(self.Vehicles))
 
         ############ run uplink wireless ######################
@@ -437,9 +426,6 @@ class env_main():
                 
         ##################################################################
         self.time += 1 # increase decision time 
-        if self.time % 500 == 1:
-            pass
-        # print('env time', self.time)
         return None
 
 
@@ -455,20 +441,14 @@ class env_main():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('-l','--length', type=int, default=10000) # ms
+    parser.add_argument('-l','--length', type=int, default=5000) # ms
     parser.add_argument('--exp_name', type=str, default='env_main')
     parser.add_argument('--car_num', type=int, default=20)
-    parser.add_argument('--traffic', type=int, default=10)
-    parser.add_argument('-pd','--poisson_density', type=float, default=0.000)
-    parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.05)
-    # TODO
-    # 1. ego computing 
-    # 2. Baseline: least workload (average resource)
-    # 3. Baseline: other algorithm
+    parser.add_argument('-epd','--ego_poisson_density', type=float, default=0.02)
     parser.add_argument('-m','--mode', type=str, default="pso") # pso, fpsomr, base, least
     parser.add_argument('-sf','--show_figure', action="store_true") #
     parser.add_argument('-nkkt','--no_kkt', action="store_false") # KKT for in vheicle resource allocation
-    parser.add_argument('-hm','--H_MIN', type=float, default=0.1) # KKT for in vheicle resource allocation
+    parser.add_argument('-hm','--H_MIN', type=float, default=0.2) # KKT for in vheicle resource allocation
     args = parser.parse_args()
     
     if args.mode != 'pso':
@@ -477,47 +457,27 @@ if __name__ == '__main__':
     # log file and results are stored here
     folder_name = 'intensity %s, v num %s, length %s, mode %s, H_MIN %s' \
         %(args.ego_poisson_density, args.car_num , args.length, args.mode, args.H_MIN)
-    # if os.path.exists(folder_name):
-    # # check if previous experiment results are stored in this folder 
-    #     if os.path.getsize(folder_name):
-    #         # delete
-    #         for file in os.listdir(folder_name)[0:]:
-    #             file_path = folder_name+'/'+file 
-    #             os.remove(file_path)
-    # else:
-    #     os.mkdir(folder_name)
     if os.path.exists(folder_name):
         shutil.rmtree(folder_name) # delete previous results
     os.mkdir(folder_name)
     
     
-    env = env_main(num_vehicles=args.car_num, poisson_density = args.poisson_density, 
+    env = env_main(num_vehicles=args.car_num, 
                    ego_poisson_density = args.ego_poisson_density,
-                   length = args.length, mode = args.mode, kkt_allocation = args.no_kkt, log_folder = folder_name, h_min = args.H_MIN)
+                   length = args.length, mode = args.mode, kkt_allocation = args.no_kkt,
+                   log_folder = folder_name, h_min = args.H_MIN)
 
     start_time = time.time()
-    for i in tqdm(range(int(1.5*args.length))):
+    for i in tqdm(range(int(args.length))):
         # random select vid and action
         initial_state = env.step()
     
     print("time usage:", time.time()-start_time)
 
     # plot the CDF of the achieved all user latency
-    
-    # fig, ax = plt.subplots()
-    # plt.hist(np.array(env.stats['latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
-    # fix_hist_step_vertical_line_at_end(ax)
-    # plt.title('Possion Distribution density = %s' %(args.poisson_density))
-    # plt.xlabel('latency')
-    # plt.ylabel("CDF")
-    # plt.show()
-    # fig.savefig('CDF of latency on PP density %s.png' %(args.poisson_density))
     plt_size = 8
     fig, ax = plt.subplots(2, 2, figsize=(2*plt_size,plt_size))
     plt.suptitle('Possion Distribution density = %s' %(args.ego_poisson_density))
-    
-    # TODO
-    # draw downlink, uplink
     
     ax1 = ax[0,0]
     ax1.hist(np.array(env.stats['ego_v_latency']), bins=100,cumulative=True, density=True, histtype='step',  color='C0',)
@@ -543,7 +503,7 @@ if __name__ == '__main__':
     ax4.set_title('average task number, average = %s' %(statistics.mean(env.vehicle_tasks_num[:args.length])))
     ax4.set_xlabel('time')
     ax4.set_ylabel("tasks number")
-
+    
     if args.show_figure:
        plt.show()
     
@@ -556,16 +516,23 @@ if __name__ == '__main__':
     output_hal.close()
     
     output_hal = open(folder_name+'/'+'finished tasks.pkl','wb')
-    # for tk in env.finishedTASKS:
     str = pickle.dumps(env.finishedTASKS)
     output_hal.write(str)
     output_hal.close()
 
     output_hal = open(folder_name+'/'+'all tasks.pkl','wb')
-    # for tk in env.finishedTASKS:
     str = pickle.dumps(env.TASKS)
     output_hal.write(str)
     output_hal.close()
+    
+    output_hal = open(folder_name+'/'+'reapted task num.pkl','wb')
+    str = pickle.dumps(env.repeated_task_num)
+    output_hal.write(str)
+    output_hal.close()
+    
+    # print allocation
+    for allocation_log in env.allocation_history:
+        print(allocation_log)
     print('finishe task num',len(env.finishedTASKS))
     print('task num',len(env.TASKS))
     avg_compute_time = 0
@@ -596,3 +563,5 @@ if __name__ == '__main__':
     print('average duplicated task num', np.sum(env.repeated_task_num)/ len(env.repeated_task_num) )
     
     print('done')
+    
+    

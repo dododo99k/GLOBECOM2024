@@ -19,7 +19,7 @@ class ShareCompServer:
         #     self.location = np.random.randint(30, 300, 2) # random generate the vehicle location
         # else:
         #     self.location = np.random.randint(30, 150, 2)
-        self.distance = np.random.randint(50, 900, 1)[0]
+        self.distance = np.random.randint(10, 100, 1)[0]
         self.angle = 2*math.pi*np.random.rand(1)[0]
         self.location = np.round([math.cos(self.angle) * self.distance, math.sin(self.angle) * self.distance])
         

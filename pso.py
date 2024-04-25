@@ -1,13 +1,14 @@
 import numpy as np
 import time,math,random
 import itertools
+import matplotlib.pyplot as plt
+from parameters import *
 
 MU = 1
-lambda_prob = 0.0005
-exterior_penalty = 100000
+# lambda_prob = 0.005
 
 def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
-        w_max = 0.8 ,w_min = 0.8, v_max = 3, v_min = -3, h_min = 0.1):
+        w_max = 0.8 ,w_min = 0.8, v_max = 10, v_min = -10, h_min = 0.1):
     
     # print('fitness_list')
     # print(fitness_list)
@@ -18,13 +19,13 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
 
         for tkid in range(tasks_num):
             if np.sum(particle[ tkid*vehicles_num : (tkid+1)*vehicles_num ]) == 0:
-                value = 10000000000000
+                value = 100000000000000000
                 delete_flag = True
                 return  [value, delete_flag, None]
             
         tasks_time = np.zeros(tasks_num)
         
-        prob = np.zeros(tasks_num)
+        prob = []
         # list of vehicle, store tasks number when multi-tasks are allocated to one vehicle
         particle_count = [0] * vehicles_num
         
@@ -44,96 +45,40 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
             # calculate repeating tasks allocation
             # particle_count = np.sum(particle[ tkid*vehicles_num : (tkid+1)*vehicles_num ])
             prob_temp = 1
-            temp_task_time = 0
             for vid in range(vehicles_num):
                 if particle[ tkid*vehicles_num + vid ]==1:
-                    tasks_time[tkid] += tasks[tkid].remain_size_dl/fitness_list[vid][0]\
+                    temp_task_time = 0
+                    temp_task_time += tasks[tkid].remain_size_dl/fitness_list[vid][0]\
                         *(fitness_list[vid][3] + particle_count[vid])
                     
-                    tasks_time[tkid] += tasks[tkid].remain_size_ul/fitness_list[vid][1]\
+                    temp_task_time += tasks[tkid].remain_size_ul/fitness_list[vid][1]\
                         *(fitness_list[vid][4] + particle_count[vid])
                     
-                    tasks_time[tkid] += tasks[tkid].remain_compute_size/fitness_list[vid][2]\
+                    temp_task_time += tasks[tkid].remain_compute_size/fitness_list[vid][2]\
                         *(fitness_list[vid][5] + particle_count[vid])
 
                     # prob[tkid] = 1 - edge_vehicles[vid].prob(tasks_time[tkid]) # fail prob
-                    prob[tkid] = 1 - math.exp(- tasks_time[tkid]* lambda_prob)
-                    prob_temp *= prob[tkid] # np.log(1 + h_min - prob[tkid])
-                    temp_task_time += tasks_time[tkid]
+                    # prob[tkid] = 1 - math.exp(- temp_task_time* lambda_prob)
+                    prob_temp *= (1 - math.exp(- temp_task_time* lambda_prob)) # np.log(1 + h_min - prob[tkid])
+                    tasks_time[tkid] += temp_task_time
             # fitness value with barrier function\
+            prob.append(prob_temp)
             barrier = mu_temp * np.log(1 + h_min - prob_temp)
-            value_s.append(temp_task_time - barrier) # fitness value
+            value_s.append(tasks_time[tkid] - barrier) # fitness value
             value = np.sum(value_s)
             if h_min < prob_temp:
                 delete_flag = True
         # print('fitness func time:', time.time()-fitness_func_start_time)
-        prob_temp = float(prob_temp)
-        return  [value, delete_flag, prob_temp]
-
-    def fitness_func_debug(particle , time):
-        # adaptive mu
-        mu_temp = MU  * (T-time)/T
-
-        for tkid in range(tasks_num):
-            if np.sum(particle[ tkid*vehicles_num : (tkid+1)*vehicles_num ])== 0:
-                value = 10000000
-                delete_flag = False
-                return  [value, delete_flag, None]
-            
-        tasks_time = np.zeros(tasks_num)
-        
-        prob = np.zeros(tasks_num)
-        # list of vehicle, store tasks number when multi-tasks are allocated to one vehicle
-        particle_count = [0] * vehicles_num
-        
-        for vid in range(vehicles_num):
-            # calculate repeating tasks allocation
-            for tkid in range(tasks_num):
-                particle_count[vid] += particle[ tkid*vehicles_num + vid ]
-                # np.sum(particle[ tkid*vehicles_num : (tkid+1)*vehicles_num ])
-        pass
-    
-        value_s = []
-        # for some tasks allocation combination
-        # they may not satisify the latency probability restriction
-        # thus delete and renew this combination
-        delete_flag = False
-        for tkid in range(tasks_num):
-            # calculate repeating tasks allocation
-            # particle_count = np.sum(particle[ tkid*vehicles_num : (tkid+1)*vehicles_num ])
-            prob_temp = 1
-            temp_task_time = 0
-            for vid in range(vehicles_num):
-                if particle[ tkid*vehicles_num + vid ]==1:
-                    tasks_time[tkid] += tasks[tkid].remain_size_dl/fitness_list[vid][0]\
-                        *(fitness_list[vid][3] + particle_count[vid])
-                    
-                    tasks_time[tkid] += tasks[tkid].remain_size_ul/fitness_list[vid][1]\
-                        *(fitness_list[vid][4] + particle_count[vid])
-                    
-                    tasks_time[tkid] += tasks[tkid].remain_compute_size/fitness_list[vid][2]\
-                        *(fitness_list[vid][5] + particle_count[vid])
-
-                    # prob[tkid] = 1 - edge_vehicles[vid].prob(tasks_time[tkid]) # fail prob
-                    prob[tkid] = 1 - math.exp(- tasks_time[tkid]* lambda_prob)
-                    prob_temp *= prob[tkid] # np.log(1 + h_min - prob[tkid])
-                    temp_task_time += tasks_time[tkid]
-                    
-            # fitness value with barrier function\
-            barrier = mu_temp * np.log(1 + h_min - prob_temp)
-            value_s.append(temp_task_time - barrier) # fitness value
-            value = np.sum(value_s)
-            if h_min < prob_temp:
-                delete_flag = True
-        # print('fitness func time:', time.time()-fitness_func_start_time)
-        return  [value, delete_flag, prob_temp]
+        ave_prob = np.sum(prob)/len(prob)
+        return  [value, delete_flag, ave_prob]
 
     def initialize( pre_best_x = None):
                 # PSO main part
         # random sample to initialize partocles
         # x = np.random.randint(0, 2, [N, D ]) # 0-20 represent vehicle_id
         x=[]
-        comb = math.factorial(vehicles_num)//(math.factorial(vehicles_num-2)*math.factorial(2))
+        # comb = math.factorial(vehicles_num)//(math.factorial(vehicles_num-2)*math.factorial(2))
+        comb = 0
         for i in range(vehicles_num+comb):
             particle_temp = []
             index_list = list(range(vehicles_num+comb))
@@ -168,8 +113,8 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
             min_fail_prob = min(min_fail_prob, fail_prob)
             if min_fail_prob == fail_prob:  best_x = x[i, :]
             # renew particle which can not satisify the latency probability restriction
-            if delete_flag or np.sum(x[i,:])>tasks_num * 2:
-                for _ in range(10): # renew maximization times
+            if delete_flag or np.sum(x[i,:])>tasks_num * 3:
+                for _ in range(50): # renew maximization times
                     particle_temp =[]
                     for _ in range(tasks_num):
                         particle_temp.extend(allocation_space[np.random.randint(len(allocation_space))])
@@ -199,7 +144,7 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
     vehicles_num = len(fitness_list) # 20 by default
     tasks_num = len(tasks)
     D = tasks_num * vehicles_num
-    
+    # build allocation space
     allocation_space = []
     for allocated_v_num in range(1,4):
         sample_list = itertools.combinations(list(range(vehicles_num)),allocated_v_num)
@@ -213,12 +158,13 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
     vx = np.random.rand(N,D)
     x , p_best, p, min_fail_prob, best_x = initialize()
     
-    if not np.std(p_best): # all elements are 100000000000000000, means no solution
+    if np.sum(p_best) == 1e17*N: # all elements are 100000000000000000, means no solution
         h_min = min_fail_prob + 0.05
         print('adjust h min ',h_min)
-        print('best x',best_x)
         x , p_best, p , min_fail_prob, best_x = initialize()
-        print(p_best)
+        print('best x',best_x)
+        # print(p_best)
+        
     
     # 初始化全局最优位置与最优值
     g_best = 100000000000000000
@@ -285,6 +231,6 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
         
     # debug
     
-    fitness_value, delete_flag, fail_prob = fitness_func_debug(x_best, T-1)
-    # print(allocation, delete_flag, g_best)
-    return allocation, gb
+    fitness_value, delete_flag, fail_prob = fitness_func(x_best, T-1)
+    # print(allocation, delete_flag, g_best, fail_prob)
+    return allocation, delete_flag, fail_prob, gb
