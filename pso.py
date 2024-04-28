@@ -113,7 +113,7 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
             min_fail_prob = min(min_fail_prob, fail_prob)
             if min_fail_prob == fail_prob:  best_x = x[i, :]
             # renew particle which can not satisify the latency probability restriction
-            if delete_flag or np.sum(x[i,:])>tasks_num * 3:
+            if delete_flag or np.sum(x[i,:])>=tasks_num * max_reapted_num:
                 for _ in range(50): # renew maximization times
                     particle_temp =[]
                     for _ in range(tasks_num):
@@ -145,8 +145,10 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
     tasks_num = len(tasks)
     D = tasks_num * vehicles_num
     # build allocation space
+    max_reapted_num = 3
+    max_reapted_num += 1
     allocation_space = []
-    for allocated_v_num in range(1,4):
+    for allocated_v_num in range(1,max_reapted_num):
         sample_list = itertools.combinations(list(range(vehicles_num)),allocated_v_num)
         for sample_item in sample_list:
             particle = [0] * vehicles_num
@@ -185,7 +187,7 @@ def PSO(tasks, fitness_list, N = 100, T = 50 , c1 = 1.5, c2 = 1.5,
             except:
                 continue
             # renew particle which can not satisify the latency probability restriction
-            if delete_flag or np.sum(x[j,:]) > tasks_num*3:
+            if delete_flag or np.sum(x[j,:]) >= tasks_num*max_reapted_num:
                 for k in range(10): # renew maximization times
                     particle_temp =[]
                     for _ in range(tasks_num):
